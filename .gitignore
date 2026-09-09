@@ -1,0 +1,23 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Training & Temporary runs
+runs/
+*.zip
+*.log
+
+# Large Datasets (Images)
+helmet.yolov8/
+hwlmet.yolov8/
+hwlmet_optimized/
+custom_dataset/
+my_dataset/
+
+# IDE & OS files
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+.DS_Store

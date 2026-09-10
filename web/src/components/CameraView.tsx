@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef } from "react";
-import { RefreshCw, FlipHorizontal, AlertCircle, X, Play, Pause, Square, CheckCircle2 } from "lucide-react";
+import { RefreshCw, FlipHorizontal, AlertCircle, X, Play, Pause, Square } from "lucide-react";
 import { CaptureSettings } from "@/lib/types";
 
 export interface CameraViewRef {
@@ -50,6 +50,41 @@ export const CameraView = forwardRef<CameraViewRef, CameraViewProps>(
     const [isFlashActive, setIsFlashActive] = useState(false);
     const [videoDimensions, setVideoDimensions] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
 
+    // Lock page scroll and request browser fullscreen when in Fullscreen Mode
+    useEffect(() => {
+      if (isFullscreen) {
+        document.body.style.overflow = "hidden";
+        document.body.style.touchAction = "none";
+        document.documentElement.style.overflow = "hidden";
+
+        try {
+          if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen().catch(() => {});
+          }
+        } catch {
+          // Ignore
+        }
+      } else {
+        document.body.style.overflow = "";
+        document.body.style.touchAction = "";
+        document.documentElement.style.overflow = "";
+
+        try {
+          if (document.fullscreenElement && document.exitFullscreen) {
+            document.exitFullscreen().catch(() => {});
+          }
+        } catch {
+          // Ignore
+        }
+      }
+
+      return () => {
+        document.body.style.overflow = "";
+        document.body.style.touchAction = "";
+        document.documentElement.style.overflow = "";
+      };
+    }, [isFullscreen]);
+
     // Flash trigger animation
     useEffect(() => {
       if (flashTrigger > 0 && settings.flashEffect) {
@@ -59,7 +94,7 @@ export const CameraView = forwardRef<CameraViewRef, CameraViewProps>(
       }
     }, [flashTrigger, settings.flashEffect]);
 
-    // Setup camera stream with unconstrained natural aspect ratio
+    // Setup camera stream with natural resolution
     useEffect(() => {
       let isMounted = true;
 
@@ -117,7 +152,6 @@ export const CameraView = forwardRef<CameraViewRef, CameraViewProps>(
         const canvas = canvasRef.current;
         if (!video || !canvas || video.videoWidth === 0) return null;
 
-        // Use natural camera resolution without distortion
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         const ctx = canvas.getContext("2d");
@@ -152,16 +186,16 @@ export const CameraView = forwardRef<CameraViewRef, CameraViewProps>(
 
     return (
       <div
-        className={`relative transition-all duration-300 overflow-hidden bg-[#0D1017] flex items-center justify-center ${
+        className={
           isFullscreen
-            ? "fixed inset-0 z-50 w-screen h-screen bg-black"
-            : "w-full min-h-[300px] max-h-[68vh] rounded-2xl border border-white/10 shadow-2xl"
-        }`}
+            ? "fixed inset-0 z-[99999] w-screen h-[100dvh] bg-black overflow-hidden flex items-center justify-center select-none"
+            : "relative w-full min-h-[280px] max-h-[65vh] rounded-2xl border border-white/10 shadow-2xl overflow-hidden bg-[#0D1017] flex items-center justify-center"
+        }
       >
         <canvas ref={canvasRef} className="hidden" />
 
         {cameraError ? (
-          <div className="flex flex-col items-center justify-center p-6 text-center max-w-md">
+          <div className="flex flex-col items-center justify-center p-6 text-center max-w-md z-10">
             <div className="w-16 h-16 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center mb-4">
               <AlertCircle size={32} />
             </div>
@@ -176,84 +210,85 @@ export const CameraView = forwardRef<CameraViewRef, CameraViewProps>(
           </div>
         ) : (
           <>
-            {/* Native Video Feed - Adapts to Portrait or Landscape */}
+            {/* Live Camera Feed: in Fullscreen it covers edge-to-edge like native phone camera */}
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
               onLoadedMetadata={handleLoadedMetadata}
-              className={`w-full h-full object-contain transition-transform duration-300 ${
+              className={`w-full h-full transition-transform duration-300 pointer-events-none ${
                 settings.mirror ? "scale-x-[-1]" : ""
-              } ${isFullscreen ? "max-h-screen max-w-screen" : "max-h-[68vh]"}`}
+              } ${isFullscreen ? "object-cover" : "object-contain max-h-[65vh]"}`}
             />
 
-            {/* Shutter Flash Animation Overlay */}
+            {/* Shutter Flash Animation */}
             <div
-              className={`absolute inset-0 bg-white pointer-events-none transition-opacity duration-100 ${
-                isFlashActive ? "opacity-80" : "opacity-0"
+              className={`absolute inset-0 bg-white pointer-events-none transition-opacity duration-100 z-30 ${
+                isFlashActive ? "opacity-90" : "opacity-0"
               }`}
             />
 
-            {/* Top Bar Controls */}
-            <div className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none z-10">
-              <div className="flex items-center gap-2 bg-black/70 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/15">
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-                </span>
-                <span className="text-xs font-bold text-white tracking-wider">
-                  {isCapturing ? "RECORDING" : "LIVE"}
-                </span>
-                {videoDimensions.width > 0 && (
-                  <span className="text-[11px] text-gray-300 border-l border-white/20 pl-2">
-                    {videoDimensions.width}x{videoDimensions.height}
-                  </span>
+            {/* Top Bar HUD */}
+            <div className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none z-40">
+              {/* Left: Exit button or live badge */}
+              <div className="flex items-center gap-2 pointer-events-auto">
+                {isFullscreen ? (
+                  <button
+                    type="button"
+                    onClick={onCloseFullscreen}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-black/75 hover:bg-rose-600 text-white rounded-full border border-white/20 shadow-xl backdrop-blur-md text-xs font-bold transition-all active:scale-95"
+                  >
+                    <X size={16} />
+                    <span>ออก</span>
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2 bg-black/70 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/15">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                    </span>
+                    <span className="text-[11px] font-bold text-white tracking-wider">LIVE</span>
+                  </div>
                 )}
               </div>
 
+              {/* Right: Camera flip & mirror buttons */}
               <div className="flex items-center gap-2 pointer-events-auto">
                 <button
+                  type="button"
                   onClick={toggleMirror}
                   title="สลับโหมดกระจก (Mirror)"
-                  className={`p-2.5 rounded-full border transition-all ${
+                  className={`p-2.5 rounded-full border shadow-xl backdrop-blur-md transition-all active:scale-95 ${
                     settings.mirror
-                      ? "bg-blue-500/30 border-blue-500/50 text-blue-300"
-                      : "bg-black/70 border-white/15 text-gray-400 hover:text-white"
+                      ? "bg-blue-500/30 border-blue-500/60 text-blue-300"
+                      : "bg-black/75 border-white/20 text-gray-300 hover:text-white"
                   }`}
                 >
                   <FlipHorizontal size={18} />
                 </button>
                 <button
+                  type="button"
                   onClick={toggleFacingMode}
                   title="สลับกล้องหน้า/หลัง"
-                  className="p-2.5 bg-black/70 hover:bg-black/90 text-gray-300 hover:text-white rounded-full border border-white/15 transition-all active:scale-95"
+                  className="p-2.5 bg-black/75 hover:bg-black/90 text-gray-300 hover:text-white rounded-full border border-white/20 shadow-xl backdrop-blur-md transition-all active:scale-95"
                 >
                   <RefreshCw size={18} />
                 </button>
-                {isFullscreen && (
-                  <button
-                    onClick={onCloseFullscreen}
-                    title="ปิดโหมดเต็มจอ"
-                    className="p-2.5 bg-rose-600/80 hover:bg-rose-600 text-white rounded-full shadow-lg transition-all active:scale-95 ml-2"
-                  >
-                    <X size={20} />
-                  </button>
-                )}
               </div>
             </div>
 
-            {/* FULLSCREEN MODE: Big Start Button in Center */}
+            {/* FULLSCREEN MODE: Big Start Button at Center before capture */}
             {isFullscreen && !isCapturing && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center p-4 bg-black/40 backdrop-blur-[2px] z-20">
-                <div className="text-center flex flex-col items-center gap-4 bg-black/80 p-6 sm:p-8 rounded-3xl border border-white/20 shadow-2xl max-w-sm w-full animate-in fade-in zoom-in duration-200">
+              <div className="absolute inset-0 flex flex-col items-center justify-center p-4 bg-black/30 backdrop-blur-[2px] z-40">
+                <div className="text-center flex flex-col items-center gap-4 bg-black/85 p-6 sm:p-8 rounded-3xl border border-white/20 shadow-2xl max-w-sm w-full animate-in fade-in zoom-in duration-150">
                   <div className="w-16 h-16 rounded-full bg-blue-500/20 text-[#3E6AE1] flex items-center justify-center">
                     <Play size={32} fill="currentColor" className="ml-1" />
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold text-white mb-1">พร้อมถ่ายรูปแล้ว</h2>
+                    <h2 className="text-xl font-bold text-white mb-1">กล้องพร้อมแล้ว</h2>
                     <p className="text-xs text-gray-300">
-                      หมวด: <strong className="text-emerald-400 font-bold">{settings.className}</strong> | เป้าหมาย: {settings.targetCount} รูป (ทุก {settings.intervalSec}s)
+                      หมวด: <strong className="text-emerald-400 font-bold">{settings.className}</strong> | เป้าหมาย: {settings.targetCount} รูป
                     </p>
                   </div>
                   <button
@@ -269,21 +304,21 @@ export const CameraView = forwardRef<CameraViewRef, CameraViewProps>(
                     onClick={onCloseFullscreen}
                     className="text-xs text-gray-400 hover:text-white transition-colors"
                   >
-                    ✕ ย้อนกลับไปตั้งค่า
+                    ✕ ปิดโหมดเต็มจอ
                   </button>
                 </div>
               </div>
             )}
 
-            {/* FULLSCREEN MODE: Live Floating HUD during Capture */}
+            {/* FULLSCREEN MODE: Floating Controls during capture */}
             {isFullscreen && isCapturing && (
-              <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 z-20 w-full max-w-md px-4">
-                {/* Progress Pill */}
+              <div className="absolute bottom-8 left-0 right-0 flex flex-col items-center gap-3 z-40 px-4">
+                {/* Progress Card */}
                 <div className="bg-black/85 backdrop-blur-md px-6 py-2.5 rounded-full border border-white/20 shadow-2xl flex items-center gap-4">
                   <div className="text-sm font-bold text-white">
-                    ถ่ายแล้ว: <span className="text-emerald-400 text-base">{capturedCount}</span> / {settings.targetCount}
+                    ถ่ายแล้ว: <span className="text-emerald-400 text-base font-extrabold">{capturedCount}</span> / {settings.targetCount}
                   </div>
-                  <div className="w-24 h-2 bg-white/20 rounded-full overflow-hidden">
+                  <div className="w-24 h-2.5 bg-white/20 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-emerald-400 transition-all duration-150"
                       style={{ width: `${Math.min(100, (capturedCount / settings.targetCount) * 100)}%` }}
@@ -291,28 +326,31 @@ export const CameraView = forwardRef<CameraViewRef, CameraViewProps>(
                   </div>
                 </div>
 
-                {/* Floating Controls */}
+                {/* Floating Buttons */}
                 <div className="flex items-center gap-3">
                   {isPaused ? (
                     <button
+                      type="button"
                       onClick={onResumeCapture}
-                      className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl shadow-lg flex items-center gap-2 text-sm active:scale-95"
+                      className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl shadow-xl flex items-center gap-2 text-sm active:scale-95"
                     >
                       <Play size={18} fill="currentColor" />
                       <span>ทำต่อ</span>
                     </button>
                   ) : (
                     <button
+                      type="button"
                       onClick={onPauseCapture}
-                      className="px-6 py-3 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-2xl shadow-lg flex items-center gap-2 text-sm active:scale-95"
+                      className="px-6 py-3.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-2xl shadow-xl flex items-center gap-2 text-sm active:scale-95"
                     >
                       <Pause size={18} />
                       <span>หยุดชั่วคราว</span>
                     </button>
                   )}
                   <button
+                    type="button"
                     onClick={onStopCapture}
-                    className="px-6 py-3 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-2xl shadow-lg flex items-center gap-2 text-sm active:scale-95"
+                    className="px-6 py-3.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-2xl shadow-xl flex items-center gap-2 text-sm active:scale-95"
                   >
                     <Square size={18} fill="currentColor" />
                     <span>เสร็จสิ้น</span>
@@ -321,9 +359,9 @@ export const CameraView = forwardRef<CameraViewRef, CameraViewProps>(
               </div>
             )}
 
-            {/* Interval Progress Bar */}
+            {/* Countdown bar at bottom of fullscreen screen */}
             {isCapturing && (
-              <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-black/40 overflow-hidden z-10">
+              <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-black/60 overflow-hidden z-40">
                 <div
                   className="h-full bg-gradient-to-r from-blue-500 to-emerald-400 transition-all duration-75 ease-linear"
                   style={{ width: `${countdownProgress}%` }}

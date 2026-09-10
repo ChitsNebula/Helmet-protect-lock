@@ -2,11 +2,10 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import confetti from "canvas-confetti";
-import { HardDrive, Settings, HelpCircle, CheckCircle2, Shield } from "lucide-react";
+import { HelpCircle, CheckCircle2, Shield } from "lucide-react";
 import { CameraView, CameraViewRef } from "@/components/CameraView";
 import { ControlPanel } from "@/components/ControlPanel";
 import { GalleryDrawer } from "@/components/GalleryDrawer";
-import { SettingsModal } from "@/components/SettingsModal";
 import { playShutterSound } from "@/lib/audio";
 import { CapturedImage, CaptureSettings } from "@/lib/types";
 
@@ -29,7 +28,6 @@ export default function Home() {
   });
 
   // State
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [images, setImages] = useState<CapturedImage[]>([]);
   const [isCapturing, setIsCapturing] = useState(false);
@@ -236,28 +234,12 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Header Right Actions */}
-        <div className="flex items-center gap-2.5">
-          <button
-            onClick={() => setIsSettingsOpen(true)}
-            className={`px-3 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition-all ${
-              isDriveConfigured
-                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
-                : "bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20"
-            }`}
-          >
-            <HardDrive size={13} />
-            <span className="hidden sm:inline">Google Drive:</span>
-            <span>{isDriveConfigured ? "เชื่อมต่อแล้ว" : "ยังไม่ได้ต่อ Webhook"}</span>
-          </button>
-
-          <button
-            onClick={() => setIsSettingsOpen(true)}
-            className="p-2 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white rounded-xl transition-all"
-            title="ตั้งค่า Google Drive"
-          >
-            <Settings size={18} />
-          </button>
+        {/* Clean Status Badge (No technical settings visible to users) */}
+        <div className="flex items-center gap-2">
+          <div className="px-3.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold flex items-center gap-1.5 shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>ระบบพร้อมบันทึกภาพ</span>
+          </div>
         </div>
       </header>
 
@@ -344,13 +326,7 @@ export default function Home() {
         <p>Helmet Protect Lock - Web Dataset Collector &copy; 2026 | พร้อมใช้งานบน Vercel & Google Drive</p>
       </footer>
 
-      {/* Settings & Guide Modal */}
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        settings={settings}
-        onUpdateSettings={updateSettings}
-      />
+
     </div>
   );
 }

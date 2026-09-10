@@ -13,7 +13,7 @@ import { CapturedImage, CaptureSettings } from "@/lib/types";
 export default function Home() {
   const cameraRef = useRef<CameraViewRef>(null);
 
-  // App Settings
+  // App Settings (Preset default folder ID from user)
   const [settings, setSettings] = useState<CaptureSettings>({
     className: "with-helmet",
     autoMode: true,
@@ -25,11 +25,12 @@ export default function Home() {
     shutterSound: true,
     flashEffect: true,
     driveWebhookUrl: "",
-    driveFolderId: "",
+    driveFolderId: "1Epai3etZT3mqQLOQxkJAKhIoAg7uOFYW",
   });
 
   // State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [images, setImages] = useState<CapturedImage[]>([]);
   const [isCapturing, setIsCapturing] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -49,7 +50,7 @@ export default function Home() {
         }));
       }
     } catch {
-      // Ignore storage errors
+      // Ignore
     }
   }, []);
 
@@ -61,7 +62,6 @@ export default function Home() {
   const uploadImage = useCallback(
     async (img: CapturedImage) => {
       if (!settings.driveWebhookUrl) {
-        // No webhook configured, mark as pending/local
         return;
       }
 
@@ -78,7 +78,7 @@ export default function Home() {
             filename: img.filename,
             className: img.className,
             webhookUrl: settings.driveWebhookUrl,
-            folderId: settings.driveFolderId,
+            folderId: settings.driveFolderId || "1Epai3etZT3mqQLOQxkJAKhIoAg7uOFYW",
           }),
         });
 
@@ -167,12 +167,12 @@ export default function Home() {
         setCountdownProgress(0);
         captureFrame();
 
-        // Check if reached target count
         setImages((currentImages) => {
           if (currentImages.length + 1 >= settings.targetCount) {
             setIsCapturing(false);
+            setIsFullscreen(false); // return to normal view
             try {
-              confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+              confetti({ particleCount: 150, spread: 90, origin: { y: 0.6 } });
             } catch {
               // Ignore
             }
@@ -193,6 +193,7 @@ export default function Home() {
         e.preventDefault();
         if (settings.autoMode) {
           if (!isCapturing) {
+            setIsFullscreen(true);
             setIsCapturing(true);
             setIsPaused(false);
           } else {
@@ -228,7 +229,7 @@ export default function Home() {
             <h1 className="text-sm sm:text-base font-bold tracking-tight text-white flex items-center gap-2">
               <span>HELMET DATASET COLLECTOR</span>
               <span className="hidden sm:inline-block text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-mono border border-blue-500/30">
-                v1.0
+                v1.1
               </span>
             </h1>
             <p className="text-[11px] text-gray-400">ระบบถ่ายภาพสร้าง Dataset อัตโนมัติ & ส่งเข้า Google Drive</p>
@@ -237,7 +238,6 @@ export default function Home() {
 
         {/* Header Right Actions */}
         <div className="flex items-center gap-2.5">
-          {/* Drive Status Badge */}
           <button
             onClick={() => setIsSettingsOpen(true)}
             className={`px-3 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition-all ${
@@ -248,10 +248,9 @@ export default function Home() {
           >
             <HardDrive size={13} />
             <span className="hidden sm:inline">Google Drive:</span>
-            <span>{isDriveConfigured ? "เชื่อมต่อแล้ว" : "โหมดดาวน์โหลดในเครื่อง"}</span>
+            <span>{isDriveConfigured ? "เชื่อมต่อแล้ว" : "ยังไม่ได้ต่อ Webhook"}</span>
           </button>
 
-          {/* Settings Button */}
           <button
             onClick={() => setIsSettingsOpen(true)}
             className="p-2 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white rounded-xl transition-all"
@@ -271,12 +270,30 @@ export default function Home() {
               ref={cameraRef}
               settings={settings}
               onUpdateSettings={updateSettings}
-              isCapturing={isCapturing && !isPaused}
+              isCapturing={isCapturing}
+              isPaused={isPaused}
+              isFullscreen={isFullscreen}
+              onCloseFullscreen={() => {
+                setIsFullscreen(false);
+                setIsCapturing(false);
+                setIsPaused(false);
+              }}
+              onStartCapture={() => {
+                setIsCapturing(true);
+                setIsPaused(false);
+              }}
+              onPauseCapture={() => setIsPaused(true)}
+              onResumeCapture={() => setIsPaused(false)}
+              onStopCapture={() => {
+                setIsCapturing(false);
+                setIsFullscreen(false);
+                setIsPaused(false);
+              }}
+              capturedCount={images.length}
               countdownProgress={countdownProgress}
               flashTrigger={flashTrigger}
             />
 
-            {/* Quick Tips on Mobile & Desktop */}
             <div className="flex items-center justify-between px-3 py-2 bg-white/5 rounded-xl border border-white/5 text-xs text-gray-400">
               <span className="flex items-center gap-1.5">
                 <HelpCircle size={14} className="text-[#3E6AE1]" />
@@ -295,7 +312,9 @@ export default function Home() {
               onUpdateSettings={updateSettings}
               isCapturing={isCapturing}
               isPaused={isPaused}
+              onOpenFullscreen={() => setIsFullscreen(true)}
               onStartAuto={() => {
+                setIsFullscreen(true);
                 setIsCapturing(true);
                 setIsPaused(false);
               }}
@@ -303,6 +322,7 @@ export default function Home() {
               onResumeAuto={() => setIsPaused(false)}
               onStopAuto={() => {
                 setIsCapturing(false);
+                setIsFullscreen(false);
                 setIsPaused(false);
               }}
               onManualCapture={captureFrame}

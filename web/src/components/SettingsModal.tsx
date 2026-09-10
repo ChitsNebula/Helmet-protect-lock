@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { X, Check, Copy, ExternalLink, HardDrive, Key, HelpCircle, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { X, Check, Copy, ExternalLink, HardDrive, HelpCircle, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { CaptureSettings } from "@/lib/types";
 
 interface SettingsModalProps {
@@ -18,27 +18,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onUpdateSettings,
 }) => {
   const [webhookUrl, setWebhookUrl] = useState(settings.driveWebhookUrl);
-  const [folderId, setFolderId] = useState(settings.driveFolderId);
+  const [folderId, setFolderId] = useState(settings.driveFolderId || "1Epai3etZT3mqQLOQxkJAKhIoAg7uOFYW");
   const [isCopied, setIsCopied] = useState(false);
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "failed">("idle");
   const [testMessage, setTestMessage] = useState("");
 
   if (!isOpen) return null;
 
-  const gasCode = `const DEFAULT_FOLDER_ID = "${folderId || "YOUR_GOOGLE_DRIVE_FOLDER_ID"}";
+  const gasCode = `/**
+ * Google Apps Script สำหรับรับภาพจาก Web Dataset Collector แล้วบันทึกลง Google Drive
+ * โฟลเดอร์ปลายทาง: https://drive.google.com/drive/folders/1Epai3etZT3mqQLOQxkJAKhIoAg7uOFYW
+ */
+const FOLDER_ID = "${folderId}";
 
 function doPost(e) {
   try {
-    let data;
-    if (e.postData && e.postData.contents) {
-      data = JSON.parse(e.postData.contents);
-    } else {
-      return responseJSON({ success: false, error: "No payload found" });
+    if (!e || !e.postData || !e.postData.contents) {
+      return jsonResponse({ success: false, error: "No payload found" });
     }
 
-    const folderId = data.folderId || DEFAULT_FOLDER_ID;
-    const folder = DriveApp.getFolderById(folderId);
+    const data = JSON.parse(e.postData.contents);
+    const folder = DriveApp.getFolderById(FOLDER_ID);
 
+    // แยกโฟลเดอร์ตามคลาส (with-helmet / without-helmet)
     const className = data.className || "unclassified";
     let targetFolder = folder;
     const subFolders = folder.getFoldersByName(className);
@@ -48,20 +50,21 @@ function doPost(e) {
       targetFolder = folder.createFolder(className);
     }
 
-    const base64Data = data.image.replace(/^data:image\/(png|jpeg|jpg);base64,/, "");
-    const decodedBlob = Utilities.newBlob(Utilities.base64Decode(base64Data), "image/jpeg", data.filename);
+    // แปลง Base64 เป็นไฟล์ภาพ JPG
+    const base64Data = data.image.split(",")[1] || data.image;
+    const decodedBytes = Utilities.base64Decode(base64Data);
+    const blob = Utilities.newBlob(decodedBytes, "image/jpeg", data.filename || ("photo_" + Date.now() + ".jpg"));
 
-    const file = targetFolder.createFile(decodedBlob);
-    file.setDescription("Uploaded via Helmet Dataset Web App | Class: " + className);
+    const file = targetFolder.createFile(blob);
 
-    return responseJSON({
+    return jsonResponse({
       success: true,
       fileId: file.getId(),
       fileUrl: file.getUrl(),
       filename: data.filename
     });
   } catch (err) {
-    return responseJSON({
+    return jsonResponse({
       success: false,
       error: err.toString()
     });
@@ -69,10 +72,14 @@ function doPost(e) {
 }
 
 function doGet() {
-  return responseJSON({ status: "ok", message: "Helmet Dataset Google Drive API is active!" });
+  return jsonResponse({
+    status: "ok",
+    folderId: FOLDER_ID,
+    message: "Google Drive Upload Webhook is READY!"
+  });
 }
 
-function responseJSON(obj) {
+function jsonResponse(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
 }`;
@@ -96,7 +103,7 @@ function responseJSON(obj) {
   const handleTestConnection = async () => {
     if (!webhookUrl) {
       setTestStatus("failed");
-      setTestMessage("กรุณากรอก Google Apps Script Webhook URL ก่อนทดสอบ");
+      setTestMessage("กรุณากรอก Google Apps Script Web App URL ก่อนทดสอบ");
       return;
     }
     setTestStatus("testing");
@@ -126,8 +133,8 @@ function responseJSON(obj) {
               <HardDrive size={20} />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white">ตั้งค่าการเชื่อมต่อ Google Drive</h2>
-              <p className="text-xs text-gray-400">บันทึกภาพที่ถ่ายเข้าโฟลเดอร์ Google Drive อัตโนมัติ</p>
+              <h2 className="text-base font-bold text-white">ตั้งค่า Google Drive</h2>
+              <p className="text-xs text-gray-400">โฟลเดอร์: 1Epai3etZT3mqQLOQxkJAKhIoAg7uOFYW</p>
             </div>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-white p-1 rounded-lg">
@@ -137,11 +144,10 @@ function responseJSON(obj) {
 
         {/* Content */}
         <div className="p-5 overflow-y-auto space-y-5 text-sm">
-          {/* Inputs */}
           <div className="space-y-3">
             <div>
               <label className="text-xs font-semibold text-gray-300 block mb-1">
-                Google Apps Script Web App URL:
+                Google Apps Script Web App URL (ที่ได้จากการ Deploy):
               </label>
               <input
                 type="text"
@@ -152,20 +158,6 @@ function responseJSON(obj) {
               />
             </div>
 
-            <div>
-              <label className="text-xs font-semibold text-gray-300 block mb-1">
-                Google Drive Folder ID (โฟลเดอร์ปลายทาง):
-              </label>
-              <input
-                type="text"
-                placeholder="1a2b3c4d5e... (ดูจาก URL โฟลเดอร์ใน Google Drive)"
-                value={folderId}
-                onChange={(e) => setFolderId(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-black/40 border border-white/10 rounded-xl text-white text-xs font-mono focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-
-            {/* Test Connection Button */}
             <div className="pt-1 flex items-center justify-between">
               <button
                 type="button"
@@ -190,28 +182,27 @@ function responseJSON(obj) {
             </div>
           </div>
 
-          {/* 3-Step Guide */}
+          {/* Guide */}
           <div className="p-4 bg-white/5 rounded-xl border border-white/5 space-y-3">
             <h4 className="text-xs font-bold text-white flex items-center gap-1.5 uppercase tracking-wider">
               <HelpCircle size={15} className="text-emerald-400" />
-              วิธีสร้าง Webhook บันทึกรูปใน Google Drive (ทำครั้งเดียวใน 2 นาที):
+              วิธีเอาโค้ดไปแปะใน Google Apps Script (ทำครั้งเดียว 1 นาที):
             </h4>
             <ol className="text-xs text-gray-300 space-y-1.5 list-decimal list-inside leading-relaxed">
-              <li>สร้างโฟลเดอร์ใหม่ใน Google Drive (เช่น <code>Helmet_Dataset</code>) แล้วเปิดดู URL เพื่อก๊อปปี้ Folder ID ท้ายลิงก์</li>
               <li>
                 เปิด <a href="https://script.google.com/home" target="_blank" rel="noreferrer" className="text-blue-400 underline inline-flex items-center gap-0.5">Google Apps Script <ExternalLink size={10} /></a> แล้วกด <strong>โครงการใหม่ (New project)</strong>
               </li>
-              <li>ก๊อปปี้โค้ดด้านล่างนี้ไปวางแทนที่ทั้งหมดในไฟล์ <code>Code.gs</code></li>
+              <li>ลบโค้ดเดิมออกทั้งหมด แล้วกดปุ่ม <strong>"คัดลอกโค้ด"</strong> ด้านล่างนี้ไปแปะแทนที่</li>
               <li>
-                กด <strong>ทำให้ใช้งานได้ (Deploy)</strong> &gt; <strong>การทำให้ใช้งานได้รายการใหม่ (New deployment)</strong> &gt; เลือกประเภท <strong>เว็บแอป (Web app)</strong>
+                กด <strong>ทำให้ใช้งานได้ (Deploy)</strong> &gt; <strong>การทำให้ใช้งานได้รายการใหม่ (New deployment)</strong>
                 <ul className="list-disc list-inside pl-4 text-gray-400 pt-1">
+                  <li>เลือกประเภท: <strong>เว็บแอป (Web app)</strong></li>
                   <li>การเข้าถึง (Who has access): <strong>ทุกคน (Anyone)</strong></li>
                 </ul>
               </li>
-              <li>ก๊อปปี้ <strong>URL เว็บแอป (Web app URL)</strong> มาวางในช่องด้านบนนี้แล้วกดบันทึก จบเลย!</li>
+              <li>ก๊อปปี้ <strong>URL เว็บแอป</strong> ที่ได้มาวางในช่องด้านบนนี้แล้วกดบันทึก!</li>
             </ol>
 
-            {/* Code Box */}
             <div className="relative mt-2">
               <pre className="p-3 bg-black/60 rounded-lg text-[10px] font-mono text-gray-300 max-h-36 overflow-y-auto border border-white/10">
                 {gasCode}

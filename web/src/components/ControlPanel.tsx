@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Play, Pause, Square, Camera, ShieldCheck, ShieldAlert, Tag, Volume2, VolumeX, Sparkles, Sliders } from "lucide-react";
+import { Play, Pause, Square, Camera, ShieldCheck, ShieldAlert, Maximize2, Sliders } from "lucide-react";
 import { CaptureSettings } from "@/lib/types";
 
 interface ControlPanelProps {
@@ -9,6 +9,7 @@ interface ControlPanelProps {
   onUpdateSettings: (patch: Partial<CaptureSettings>) => void;
   isCapturing: boolean;
   isPaused: boolean;
+  onOpenFullscreen: () => void;
   onStartAuto: () => void;
   onPauseAuto: () => void;
   onResumeAuto: () => void;
@@ -22,7 +23,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onUpdateSettings,
   isCapturing,
   isPaused,
-  onStartAuto,
+  onOpenFullscreen,
   onPauseAuto,
   onResumeAuto,
   onStopAuto,
@@ -31,14 +32,13 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 }) => {
   const isWithHelmet = settings.className === "with-helmet";
   const isWithoutHelmet = settings.className === "without-helmet";
-  const isCustom = !isWithHelmet && !isWithoutHelmet;
 
   return (
     <div className="flex flex-col gap-5 bg-[#12151C] p-5 sm:p-6 rounded-2xl border border-white/10 shadow-xl">
       {/* 1. Class / Label Selector */}
       <div>
         <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2.5 block">
-          เลือกหมวดหมู่ภาพ (Dataset Class)
+          เลือกหมวดหมู่ภาพ (DATASET CLASS)
         </label>
         <div className="grid grid-cols-2 gap-2.5">
           <button
@@ -98,7 +98,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
         {/* Auto Parameters */}
         {settings.autoMode && (
-          <div className="grid grid-cols-2 gap-3 pt-2 border-t border-white/5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-white/5">
             {/* Interval Selector */}
             <div>
               <label className="text-[11px] text-gray-400 font-medium block mb-1.5">
@@ -112,7 +112,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     onClick={() => onUpdateSettings({ intervalSec: sec })}
                     className={`py-1.5 text-xs font-semibold rounded border transition-all ${
                       settings.intervalSec === sec
-                        ? "bg-[#3E6AE1] border-[#3E6AE1] text-white"
+                        ? "bg-[#3E6AE1] border-[#3E6AE1] text-white shadow"
                         : "bg-white/5 border-white/10 text-gray-300 hover:bg-white/10"
                     }`}
                   >
@@ -122,26 +122,42 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               </div>
             </div>
 
-            {/* Target Count */}
+            {/* Target Count with direct number input */}
             <div>
-              <label className="text-[11px] text-gray-400 font-medium block mb-1.5">
-                เป้าหมาย (จำนวนรูป):
-              </label>
-              <div className="grid grid-cols-4 gap-1">
-                {[20, 50, 100, 200].map((cnt) => (
-                  <button
-                    key={cnt}
-                    type="button"
-                    onClick={() => onUpdateSettings({ targetCount: cnt })}
-                    className={`py-1.5 text-xs font-semibold rounded border transition-all ${
-                      settings.targetCount === cnt
-                        ? "bg-[#3E6AE1] border-[#3E6AE1] text-white"
-                        : "bg-white/5 border-white/10 text-gray-300 hover:bg-white/10"
-                    }`}
-                  >
-                    {cnt}
-                  </button>
-                ))}
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-[11px] text-gray-400 font-medium">
+                  เป้าหมาย (จำนวนรูป):
+                </label>
+                <span className="text-[10px] text-blue-400 font-mono">พิมพ์เลขได้อิสระ</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="1"
+                  max="1000"
+                  value={settings.targetCount}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    onUpdateSettings({ targetCount: isNaN(val) ? 1 : Math.max(1, Math.min(2000, val)) });
+                  }}
+                  className="w-20 px-2.5 py-1.5 bg-black/50 border border-white/20 rounded-lg text-white font-bold text-center text-sm focus:border-blue-500 focus:outline-none"
+                />
+                <div className="flex-1 grid grid-cols-4 gap-1">
+                  {[20, 50, 100, 200].map((cnt) => (
+                    <button
+                      key={cnt}
+                      type="button"
+                      onClick={() => onUpdateSettings({ targetCount: cnt })}
+                      className={`py-1.5 text-xs font-semibold rounded border transition-all ${
+                        settings.targetCount === cnt
+                          ? "bg-[#3E6AE1] border-[#3E6AE1] text-white shadow"
+                          : "bg-white/5 border-white/10 text-gray-300 hover:bg-white/10"
+                      }`}
+                    >
+                      {cnt}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -151,15 +167,15 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       {/* 3. Primary Action Buttons */}
       <div className="flex flex-col gap-3">
         {settings.autoMode ? (
-          // Auto Mode Actions
           !isCapturing ? (
+            /* Button to Open Fullscreen Ready Mode */
             <button
               type="button"
-              onClick={onStartAuto}
-              className="w-full py-4 bg-gradient-to-r from-[#3E6AE1] to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 text-base transition-all active:scale-[0.99]"
+              onClick={onOpenFullscreen}
+              className="w-full py-4 bg-gradient-to-r from-[#3E6AE1] via-blue-600 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2.5 text-base transition-all active:scale-[0.99]"
             >
-              <Play size={20} fill="currentColor" />
-              <span>เริ่มถ่ายอัตโนมัติ ({settings.targetCount} รูป)</span>
+              <Maximize2 size={20} />
+              <span>📷 เตรียมถ่ายรูป (เต็มจอ)</span>
             </button>
           ) : (
             <div className="grid grid-cols-2 gap-3">
@@ -193,7 +209,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             </div>
           )
         ) : (
-          // Manual Single Shot Button
           <button
             type="button"
             onClick={onManualCapture}
@@ -204,26 +219,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           </button>
         )}
 
-        {/* Audio & Flash Toggles */}
         <div className="flex items-center justify-between px-2 pt-1 text-xs text-gray-400">
-          <div className="flex items-center gap-4">
-            <button
-              type="button"
-              onClick={() => onUpdateSettings({ shutterSound: !settings.shutterSound })}
-              className="flex items-center gap-1.5 hover:text-white transition-colors"
-            >
-              {settings.shutterSound ? <Volume2 size={15} className="text-emerald-400" /> : <VolumeX size={15} />}
-              <span>เสียงชัตเตอร์</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onUpdateSettings({ flashEffect: !settings.flashEffect })}
-              className="flex items-center gap-1.5 hover:text-white transition-colors"
-            >
-              <Sparkles size={15} className={settings.flashEffect ? "text-amber-400" : ""} />
-              <span>เอฟเฟกต์แฟลช</span>
-            </button>
-          </div>
+          <span className="text-gray-400">
+            หมวดหมู่: <strong className={isWithHelmet ? "text-emerald-400" : "text-rose-400"}>{settings.className}</strong>
+          </span>
           <span className="font-mono text-gray-400">
             ถ่ายแล้ว: <strong className="text-white font-bold">{capturedCount}</strong> ภาพ
           </span>

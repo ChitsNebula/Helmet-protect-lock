@@ -24,7 +24,7 @@ export default function Home() {
     facingMode: "user",
     shutterSound: true,
     flashEffect: true,
-    driveWebhookUrl: "",
+    driveWebhookUrl: "https://script.google.com/macros/s/AKfycbx2MpINdkQl0o7UBpy-EgEqE_x6G7cvF7hCFTh3u8VpOpa_7wMDBKedjNjBQtiXgpAKHg/exec",
     driveFolderId: "1Epai3etZT3mqQLOQxkJAKhIoAg7uOFYW",
   });
 

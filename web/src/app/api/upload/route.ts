@@ -10,8 +10,8 @@ export async function POST(req: NextRequest) {
     }
 
     // กำหนด URL ของ Google Apps Script Webhook
-    const targetWebhook = webhookUrl || process.env.GOOGLE_DRIVE_WEBHOOK_URL;
-    const targetFolder = folderId || process.env.GOOGLE_DRIVE_FOLDER_ID || '';
+    const targetWebhook = webhookUrl || process.env.GOOGLE_DRIVE_WEBHOOK_URL || "https://script.google.com/macros/s/AKfycbx2MpINdkQl0o7UBpy-EgEqE_x6G7cvF7hCFTh3u8VpOpa_7wMDBKedjNjBQtiXgpAKHg/exec";
+    const targetFolder = folderId || process.env.GOOGLE_DRIVE_FOLDER_ID || "1Epai3etZT3mqQLOQxkJAKhIoAg7uOFYW";
 
     if (!targetWebhook) {
       return NextResponse.json({

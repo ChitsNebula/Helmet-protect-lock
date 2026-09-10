@@ -17,7 +17,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   settings,
   onUpdateSettings,
 }) => {
-  const [webhookUrl, setWebhookUrl] = useState(settings.driveWebhookUrl);
+  const [webhookUrl, setWebhookUrl] = useState(settings.driveWebhookUrl || "https://script.google.com/macros/s/AKfycbx2MpINdkQl0o7UBpy-EgEqE_x6G7cvF7hCFTh3u8VpOpa_7wMDBKedjNjBQtiXgpAKHg/exec");
   const [folderId, setFolderId] = useState(settings.driveFolderId || "1Epai3etZT3mqQLOQxkJAKhIoAg7uOFYW");
   const [isCopied, setIsCopied] = useState(false);
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "failed">("idle");

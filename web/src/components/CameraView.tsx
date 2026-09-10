@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef } from "react";
-import { Camera, RefreshCw, FlipHorizontal, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { RefreshCw, FlipHorizontal, AlertCircle } from "lucide-react";
 import { CaptureSettings } from "@/lib/types";
 
 export interface CameraViewRef {
@@ -23,7 +23,6 @@ export const CameraView = forwardRef<CameraViewRef, CameraViewProps>(
     const [stream, setStream] = useState<MediaStream | null>(null);
     const [cameraError, setCameraError] = useState<string | null>(null);
     const [isFlashActive, setIsFlashActive] = useState(false);
-    const [showGuide, setShowGuide] = useState(true);
     const [videoDimensions, setVideoDimensions] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
 
     // Flash trigger animation
@@ -173,29 +172,6 @@ export const CameraView = forwardRef<CameraViewRef, CameraViewProps>(
               }`}
             />
 
-            {/* Viewfinder Guide Overlay */}
-            {showGuide && (
-              <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
-                {/* Oval Head/Helmet Alignment Frame */}
-                <div className="relative w-48 h-60 sm:w-64 sm:h-80 border-2 border-dashed border-emerald-400/60 rounded-[45%] shadow-[0_0_20px_rgba(16,185,129,0.2)] flex items-center justify-center">
-                  <div className="absolute -top-3 px-3 py-0.5 bg-emerald-500/80 text-[11px] font-bold text-white rounded-full uppercase tracking-wider backdrop-blur-sm">
-                    จัดตำแหน่งศีรษะ / หมวก
-                  </div>
-                  {/* Center Crosshair */}
-                  <div className="w-4 h-4 relative opacity-40">
-                    <div className="absolute top-1/2 left-0 right-0 h-[1px] bg-emerald-400" />
-                    <div className="absolute left-1/2 top-0 bottom-0 w-[1px] bg-emerald-400" />
-                  </div>
-                </div>
-
-                {/* 4 Corner Markers */}
-                <div className="absolute top-8 left-8 w-6 h-6 border-t-2 border-l-2 border-white/30" />
-                <div className="absolute top-8 right-8 w-6 h-6 border-t-2 border-r-2 border-white/30" />
-                <div className="absolute bottom-8 left-8 w-6 h-6 border-b-2 border-l-2 border-white/30" />
-                <div className="absolute bottom-8 right-8 w-6 h-6 border-b-2 border-r-2 border-white/30" />
-              </div>
-            )}
-
             {/* Top HUD Bar */}
             <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
               <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10">
@@ -215,17 +191,6 @@ export const CameraView = forwardRef<CameraViewRef, CameraViewProps>(
 
               {/* Camera Quick Controls */}
               <div className="flex items-center gap-1.5 pointer-events-auto">
-                <button
-                  onClick={() => setShowGuide(!showGuide)}
-                  title="เปิด/ปิดเส้นนำสายตา"
-                  className={`p-2 rounded-full border transition-all ${
-                    showGuide
-                      ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
-                      : "bg-black/60 border-white/10 text-gray-400 hover:text-white"
-                  }`}
-                >
-                  {showGuide ? <Eye size={16} /> : <EyeOff size={16} />}
-                </button>
                 <button
                   onClick={toggleMirror}
                   title="สลับโหมดกระจก (Mirror)"

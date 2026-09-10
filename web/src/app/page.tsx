@@ -280,7 +280,7 @@ export default function Home() {
             <div className="flex items-center justify-between px-3 py-2 bg-white/5 rounded-xl border border-white/5 text-xs text-gray-400">
               <span className="flex items-center gap-1.5">
                 <HelpCircle size={14} className="text-[#3E6AE1]" />
-                จัดให้ใบหน้าหรือหมวกกันน็อกอยู่ภายในกรอบประ เพื่อคุณภาพ Dataset ที่ดี
+                จัดตำแหน่งให้อยู่กึ่งกลางภาพ เพื่อให้ได้ Dataset ที่มีคุณภาพสูง
               </span>
               <span className="hidden sm:inline font-mono text-[11px] text-gray-500">
                 กด Spacebar เพื่อถ่าย

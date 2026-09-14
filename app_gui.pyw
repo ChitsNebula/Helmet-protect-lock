@@ -11,7 +11,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import cv2
 
-# บังคับใช้ UTF-8
+# บังคับใช้ UTF-8 บน Windows
 if sys.platform == "win32":
     import io
     if hasattr(sys.stdout, "buffer"):
@@ -22,19 +22,68 @@ if sys.platform == "win32":
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+def get_available_cameras():
+    """ค้นหารายชื่อและ index ของกล้องที่เชื่อมต่ออยู่จริงบนเครื่อง"""
+    cam_names = []
+    if sys.platform == "win32":
+        try:
+            import win32com.client
+            wmi = win32com.client.GetObject("winmgmts:")
+            devices = wmi.InstancesOf("Win32_PnPEntity")
+            for d in devices:
+                pnp = getattr(d, "PNPClass", "")
+                if pnp in ["Camera", "Image"]:
+                    name = getattr(d, "Name", "")
+                    if name and name not in cam_names:
+                        cam_names.append(name)
+        except Exception:
+            pass
+
+    cams = []
+    for i in range(6):
+        opened = False
+        if sys.platform == "win32":
+            cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
+            if cap.isOpened():
+                opened = True
+                cap.release()
+        if not opened:
+            cap = cv2.VideoCapture(i)
+            if cap.isOpened():
+                opened = True
+                cap.release()
+
+        if opened:
+            name = cam_names[i] if i < len(cam_names) else f"USB / Camera {i}"
+            cams.append((i, f"📷 กล้อง {i}: {name}"))
+
+    if not cams:
+        cams.append((0, "📷 กล้อง 0: กล้องเริ่มต้น (Default)"))
+    return cams
+
+
 class HelmetAppGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Helmet AI Control Center - YOLOv8 NCNN")
-        self.root.geometry("640x720")
-        self.root.minsize(580, 680)
+        self.root.geometry("660x740")
+        self.root.minsize(600, 700)
         self.root.configure(bg="#121418")
 
         # ตัวแปรสถานะ
         self.running_process = None
+        self.camera_list = []      # list of (index, label)
+        self.camera_map = {}       # label -> index
+        self.selected_camera = tk.StringVar()
+        self.selected_cap_camera = tk.StringVar()
+        self.cam_status_text = tk.StringVar(value="กำลังสแกนหากล้อง...")
 
         self._setup_style()
         self._build_header()
+
+        # สแกนกล้องครั้งแรก
+        self._refresh_camera_list(initial=True)
+
         self._build_tabs()
         self._build_footer()
 
@@ -69,7 +118,28 @@ class HelmetAppGUI:
 
         style.configure("TLabel", background=self.card_bg, foreground=self.text_white, font=("Segoe UI", 10))
         style.configure("TEntry", fieldbackground="#242B38", foreground="#FFFFFF", bordercolor="#363E50")
-        style.configure("TCombobox", fieldbackground="#242B38", foreground="#FFFFFF")
+        style.configure(
+            "TCombobox",
+            fieldbackground="#242B38",
+            background="#2B3240",
+            foreground="#FFFFFF",
+            selectbackground=self.accent_blue,
+            selectforeground="#FFFFFF",
+            arrowcolor="#FFFFFF",
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", "#242B38")],
+            selectbackground=[("readonly", self.accent_blue)],
+            selectforeground=[("readonly", "#FFFFFF")],
+        )
+
+        # ตั้งค่า Dropdown Listbox popup ให้เป็นโทนเข้ม
+        self.root.option_add("*TCombobox*Listbox.background", "#242B38")
+        self.root.option_add("*TCombobox*Listbox.foreground", "#FFFFFF")
+        self.root.option_add("*TCombobox*Listbox.selectBackground", self.accent_blue)
+        self.root.option_add("*TCombobox*Listbox.selectForeground", "#FFFFFF")
+        self.root.option_add("*TCombobox*Listbox.font", ("Segoe UI", 9))
 
     def _build_header(self):
         header_frame = tk.Frame(self.root, bg="#181C24", height=75)
@@ -92,6 +162,36 @@ class HelmetAppGUI:
             bg="#181C24",
         )
         subtitle.pack(anchor="w", padx=20, pady=(0, 10))
+
+    def _refresh_camera_list(self, initial=False):
+        """สแกนและอัปเดตรายชื่อกล้องใน Dropdown"""
+        cams = get_available_cameras()
+        self.camera_list = cams
+        self.camera_map = {label: idx for idx, label in cams}
+        labels = [label for _, label in cams]
+
+        prev_sel = self.selected_camera.get()
+        if prev_sel in labels:
+            self.selected_camera.set(prev_sel)
+        else:
+            self.selected_camera.set(labels[0] if labels else "")
+
+        prev_cap_sel = self.selected_cap_camera.get()
+        if prev_cap_sel in labels:
+            self.selected_cap_camera.set(prev_cap_sel)
+        else:
+            self.selected_cap_camera.set(labels[0] if labels else "")
+
+        self.cam_status_text.set(f"✓ ตรวจพบกล้องทั้งหมด {len(cams)} ตัว พร้อมใช้งาน")
+
+        # อัปเดต Dropdown widget ถ้าสร้างเสร็จแล้ว
+        if hasattr(self, "combo_cameras") and self.combo_cameras:
+            self.combo_cameras["values"] = labels
+        if hasattr(self, "combo_cap_cameras") and self.combo_cap_cameras:
+            self.combo_cap_cameras["values"] = labels
+
+        if not initial:
+            messagebox.showinfo("สแกนกล้องเสร็จสิ้น", f"พบกล้องทั้งหมด {len(cams)} ตัว:\n\n" + "\n".join(labels))
 
     def _build_tabs(self):
         notebook = ttk.Notebook(self.root)
@@ -127,33 +227,87 @@ class HelmetAppGUI:
 
         r1 = tk.Radiobutton(
             src_row, text="กล้อง Webcam (สด)", variable=self.detect_source_type, value="webcam",
-            bg=self.card_bg, fg="#FFFFFF", selectcolor="#2B3240", font=("Segoe UI", 9)
+            bg=self.card_bg, fg="#FFFFFF", selectcolor="#2B3240", font=("Segoe UI", 9),
+            command=self._on_source_type_changed
         )
         r1.pack(side="left", padx=(0, 15))
 
         r2 = tk.Radiobutton(
             src_row, text="เลือกไฟล์ภาพ / วิดีโอ / โฟลเดอร์", variable=self.detect_source_type, value="file",
-            bg=self.card_bg, fg="#FFFFFF", selectcolor="#2B3240", font=("Segoe UI", 9)
+            bg=self.card_bg, fg="#FFFFFF", selectcolor="#2B3240", font=("Segoe UI", 9),
+            command=self._on_source_type_changed
         )
         r2.pack(side="left")
 
-        # ช่องกรอก Path ไฟล์
-        file_row = tk.Frame(container, bg=self.card_bg)
-        file_row.pack(fill="x", padx=20, pady=(6, 12))
+        # Container กลางสำหรับสลับระหว่าง Webcam กับ File
+        self.source_container = tk.Frame(container, bg=self.card_bg)
+        self.source_container.pack(fill="x", padx=20, pady=(6, 10))
 
-        self.detect_source_path = tk.StringVar(value="0")
-        self.entry_detect_path = tk.Entry(file_row, textvariable=self.detect_source_path, bg="#242B38", fg="#FFFFFF", insertbackground="white", font=("Segoe UI", 9))
+        # Frame 1: กล่องเลือกกล้อง Webcam (Combobox)
+        self.frame_webcam_select = tk.Frame(self.source_container, bg=self.card_bg)
+        self.frame_webcam_select.pack(fill="x")
+
+        cam_box_row = tk.Frame(self.frame_webcam_select, bg=self.card_bg)
+        cam_box_row.pack(fill="x")
+
+        labels = [label for _, label in self.camera_list]
+        self.combo_cameras = ttk.Combobox(
+            cam_box_row,
+            textvariable=self.selected_camera,
+            values=labels,
+            state="readonly",
+            font=("Segoe UI", 9),
+        )
+        self.combo_cameras.pack(side="left", fill="x", expand=True, ipady=4)
+
+        btn_rescan = tk.Button(
+            cam_box_row,
+            text="🔄 สแกนหากล้องใหม่",
+            bg="#2B3240",
+            fg="#FFFFFF",
+            font=("Segoe UI", 8, "bold"),
+            relief="flat",
+            cursor="hand2",
+            padx=10,
+            command=lambda: self._refresh_camera_list(initial=False)
+        )
+        btn_rescan.pack(side="left", padx=(8, 0), ipady=3)
+
+        lbl_cam_status = tk.Label(
+            self.frame_webcam_select,
+            textvariable=self.cam_status_text,
+            font=("Segoe UI", 8),
+            fg="#00E676",
+            bg=self.card_bg
+        )
+        lbl_cam_status.pack(anchor="w", pady=(3, 0))
+
+        # Frame 2: ช่องเลือกไฟล์ภาพ / วิดีโอ / โฟลเดอร์ (ซ่อนไว้ก่อน)
+        self.frame_file_select = tk.Frame(self.source_container, bg=self.card_bg)
+
+        self.detect_source_path = tk.StringVar(value="")
+        file_box_row = tk.Frame(self.frame_file_select, bg=self.card_bg)
+        file_box_row.pack(fill="x")
+
+        self.entry_detect_path = tk.Entry(
+            file_box_row,
+            textvariable=self.detect_source_path,
+            bg="#242B38",
+            fg="#FFFFFF",
+            insertbackground="white",
+            font=("Segoe UI", 9)
+        )
         self.entry_detect_path.pack(side="left", fill="x", expand=True, ipady=4)
 
-        btn_browse_img = tk.Button(file_row, text="เลือกไฟล์...", bg="#333D4F", fg="#FFFFFF", font=("Segoe UI", 8), command=self._browse_detect_file)
+        btn_browse_img = tk.Button(file_box_row, text="เลือกไฟล์...", bg="#333D4F", fg="#FFFFFF", font=("Segoe UI", 8), command=self._browse_detect_file)
         btn_browse_img.pack(side="left", padx=(6, 0))
 
-        btn_browse_folder = tk.Button(file_row, text="เลือกโฟลเดอร์...", bg="#333D4F", fg="#FFFFFF", font=("Segoe UI", 8), command=self._browse_detect_folder)
+        btn_browse_folder = tk.Button(file_box_row, text="เลือกโฟลเดอร์...", bg="#333D4F", fg="#FFFFFF", font=("Segoe UI", 8), command=self._browse_detect_folder)
         btn_browse_folder.pack(side="left", padx=(4, 0))
 
         # เลือกรุ่นโมเดล
         lbl_model = tk.Label(container, text="โมเดลที่ใช้ประมวลผล (Model):", font=("Segoe UI", 10, "bold"), fg="#FFFFFF", bg=self.card_bg)
-        lbl_model.pack(anchor="w", padx=20, pady=(5, 5))
+        lbl_model.pack(anchor="w", padx=20, pady=(10, 5))
 
         self.model_choice = tk.StringVar(value="best_ncnn_model")
         model_row = tk.Frame(container, bg=self.card_bg)
@@ -202,6 +356,16 @@ class HelmetAppGUI:
         )
         self.btn_start_detect.pack(fill="x", padx=20, ipady=8, pady=(0, 10))
 
+    def _on_source_type_changed(self):
+        """สลับการแสดงผลระหว่างกล่องเลือกกล้อง กับช่องเลือกไฟล์"""
+        stype = self.detect_source_type.get()
+        if stype == "webcam":
+            self.frame_file_select.pack_forget()
+            self.frame_webcam_select.pack(fill="x")
+        else:
+            self.frame_webcam_select.pack_forget()
+            self.frame_file_select.pack(fill="x")
+
     def _browse_detect_file(self):
         file_path = filedialog.askopenfilename(
             title="เลือกไฟล์ภาพหรือวิดีโอ",
@@ -210,16 +374,27 @@ class HelmetAppGUI:
         if file_path:
             self.detect_source_path.set(file_path)
             self.detect_source_type.set("file")
+            self._on_source_type_changed()
 
     def _browse_detect_folder(self):
         folder_path = filedialog.askdirectory(title="เลือกโฟลเดอร์ภาพ")
         if folder_path:
             self.detect_source_path.set(folder_path)
             self.detect_source_type.set("file")
+            self._on_source_type_changed()
 
     def _start_detection(self):
         src_type = self.detect_source_type.get()
-        source = "0" if src_type == "webcam" else self.detect_source_path.get()
+        if src_type == "webcam":
+            cam_label = self.selected_camera.get()
+            cam_idx = self.camera_map.get(cam_label, 0)
+            source = str(cam_idx)
+        else:
+            source = self.detect_source_path.get().strip()
+            if not source:
+                messagebox.showwarning("แจ้งเตือน", "กรุณาเลือกไฟล์ภาพ วิดีโอ หรือโฟลเดอร์ที่ต้องการตรวจจับ")
+                return
+
         model_name = self.model_choice.get()
         conf = self.conf_val.get()
         no_flip = not self.flip_var.get()
@@ -241,13 +416,43 @@ class HelmetAppGUI:
 
         threading.Thread(target=self._run_subprocess, args=(cmd,), daemon=True).start()
 
-    # ---------------- TAB 2: CAPTURE ----------------
+    # ---------------- TAB 2: DATASET CAPTURE ----------------
     def _build_capture_tab(self, parent):
         container = tk.Frame(parent, bg=self.card_bg, highlightbackground=self.card_border, highlightthickness=1)
         container.pack(fill="both", expand=True, padx=10, pady=10)
 
         title = tk.Label(container, text="ระบบถ่ายรูปเก็บ Dataset อัตโนมัติ (Hands-Free)", font=("Segoe UI", 11, "bold"), fg="#FFB300", bg=self.card_bg)
-        title.pack(anchor="w", padx=20, pady=(15, 10))
+        title.pack(anchor="w", padx=20, pady=(15, 8))
+
+        # กล่องเลือกกล้องสำหรับถ่าย Dataset
+        lbl_cam = tk.Label(container, text="กล้องสำหรับถ่ายภาพ (Camera):", font=("Segoe UI", 9, "bold"), fg="#FFFFFF", bg=self.card_bg)
+        lbl_cam.pack(anchor="w", padx=20, pady=(2, 2))
+
+        cam_row = tk.Frame(container, bg=self.card_bg)
+        cam_row.pack(fill="x", padx=20, pady=(0, 10))
+
+        labels = [label for _, label in self.camera_list]
+        self.combo_cap_cameras = ttk.Combobox(
+            cam_row,
+            textvariable=self.selected_cap_camera,
+            values=labels,
+            state="readonly",
+            font=("Segoe UI", 9),
+        )
+        self.combo_cap_cameras.pack(side="left", fill="x", expand=True, ipady=4)
+
+        btn_rescan_cap = tk.Button(
+            cam_row,
+            text="🔄 สแกนใหม่",
+            bg="#2B3240",
+            fg="#FFFFFF",
+            font=("Segoe UI", 8, "bold"),
+            relief="flat",
+            cursor="hand2",
+            padx=10,
+            command=lambda: self._refresh_camera_list(initial=False)
+        )
+        btn_rescan_cap.pack(side="left", padx=(8, 0), ipady=3)
 
         # โฟลเดอร์ปลายทาง
         lbl_out = tk.Label(container, text="โฟลเดอร์สำหรับเซฟภาพ:", font=("Segoe UI", 9, "bold"), fg="#FFFFFF", bg=self.card_bg)
@@ -267,12 +472,12 @@ class HelmetAppGUI:
         lbl_preset = tk.Label(container, text="คำนำหน้าชื่อภาพ (Class Prefix):", font=("Segoe UI", 9, "bold"), fg="#FFFFFF", bg=self.card_bg)
         lbl_preset.pack(anchor="w", padx=20, pady=(2, 2))
 
-        self.cap_prefix = tk.StringVar(value="with_helmet")
         preset_row = tk.Frame(container, bg=self.card_bg)
         preset_row.pack(fill="x", padx=20, pady=(0, 10))
 
+        self.cap_prefix = tk.StringVar(value="with_helmet")
         p1 = tk.Radiobutton(preset_row, text="with_helmet (ใส่หมวก)", variable=self.cap_prefix, value="with_helmet", bg=self.card_bg, fg="#00E676", selectcolor="#2B3240", font=("Segoe UI", 9))
-        p1.pack(side="left", padx=(0, 15))
+        p1.pack(side="left", padx=(0, 20))
 
         p2 = tk.Radiobutton(preset_row, text="without_helmet (ไม่ใส่หมวก)", variable=self.cap_prefix, value="without_helmet", bg=self.card_bg, fg="#FF5252", selectcolor="#2B3240", font=("Segoe UI", 9))
         p2.pack(side="left")
@@ -333,6 +538,9 @@ class HelmetAppGUI:
         interval = self.cap_interval.get()
         prefix = self.cap_prefix.get()
 
+        cam_label = self.selected_cap_camera.get()
+        cam_idx = self.camera_map.get(cam_label, 0)
+
         cmd = [
             sys.executable,
             os.path.join(BASE_DIR, "auto_capture.py"),
@@ -340,6 +548,7 @@ class HelmetAppGUI:
             "--count", str(count),
             "--interval", str(interval),
             "--prefix", prefix,
+            "--cam", str(cam_idx),
         ]
         threading.Thread(target=self._run_subprocess, args=(cmd,), daemon=True).start()
 

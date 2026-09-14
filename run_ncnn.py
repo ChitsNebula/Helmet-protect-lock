@@ -141,7 +141,12 @@ def run_webcam_or_video(model, source, conf_thresh, save_path=None, flip=True):
     """รัน Real-time Detection ผ่าน Webcam หรือ Video"""
     is_cam = source.isdigit() or source == "0"
     src = int(source) if is_cam else source
-    cap = cv2.VideoCapture(src)
+    if is_cam and sys.platform == "win32":
+        cap = cv2.VideoCapture(src, cv2.CAP_DSHOW)
+        if not cap.isOpened():
+            cap = cv2.VideoCapture(src)
+    else:
+        cap = cv2.VideoCapture(src)
 
     if not cap.isOpened():
         print(f"[Error] ไม่สามารถเปิดแหล่งวิดีโอ: {source}")

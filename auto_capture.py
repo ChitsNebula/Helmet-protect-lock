@@ -160,7 +160,13 @@ def main():
     existing_files = [f for f in os.listdir(args.output) if f.startswith(args.prefix) and f.endswith((".jpg", ".png"))]
     img_counter = len(existing_files)
 
-    cap = cv2.VideoCapture(args.cam)
+    if sys.platform == "win32":
+        cap = cv2.VideoCapture(args.cam, cv2.CAP_DSHOW)
+        if not cap.isOpened():
+            cap = cv2.VideoCapture(args.cam)
+    else:
+        cap = cv2.VideoCapture(args.cam)
+
     if not cap.isOpened():
         print(f"[Error] ไม่สามารถเปิดกล้อง Webcam index: {args.cam}")
         return

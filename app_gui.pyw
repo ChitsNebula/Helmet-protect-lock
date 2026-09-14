@@ -5,11 +5,41 @@ Helmet Protect Lock - Modern Desktop GUI Control Center
 
 import os
 import sys
+
+# ปิดเสียงบ่น (Log / Warnings) ของ OpenCV ให้เงียบกริบตั้งแต่เริ่ม
+os.environ["OPENCV_LOG_LEVEL"] = "OFF"
+os.environ["OPENCV_VIDEOIO_PRIORITY_MSMF"] = "0"
+
 import subprocess
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import cv2
+
+try:
+    cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_SILENT)
+except Exception:
+    pass
+
+
+class SuppressStderr:
+    """ปิดกั้นข้อความรบกวนระดับ C-level stderr ระหว่างสแกนพอร์ตกล้อง"""
+    def __enter__(self):
+        try:
+            self.null_fd = os.open(os.devnull, os.O_RDWR)
+            self.save_fd = os.dup(2)
+            os.dup2(self.null_fd, 2)
+        except Exception:
+            self.null_fd = None
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            if self.null_fd is not None:
+                os.dup2(self.save_fd, 2)
+                os.close(self.null_fd)
+                os.close(self.save_fd)
+        except Exception:
+            pass
 
 # บังคับใช้ UTF-8 บน Windows
 if sys.platform == "win32":
@@ -40,22 +70,23 @@ def get_available_cameras():
             pass
 
     cams = []
-    for i in range(6):
-        opened = False
-        if sys.platform == "win32":
-            cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
-            if cap.isOpened():
-                opened = True
-                cap.release()
-        if not opened:
-            cap = cv2.VideoCapture(i)
-            if cap.isOpened():
-                opened = True
-                cap.release()
+    with SuppressStderr():
+        for i in range(6):
+            opened = False
+            if sys.platform == "win32":
+                cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
+                if cap.isOpened():
+                    opened = True
+                    cap.release()
+            if not opened:
+                cap = cv2.VideoCapture(i)
+                if cap.isOpened():
+                    opened = True
+                    cap.release()
 
-        if opened:
-            name = cam_names[i] if i < len(cam_names) else f"USB / Camera {i}"
-            cams.append((i, f"📷 กล้อง {i}: {name}"))
+            if opened:
+                name = cam_names[i] if i < len(cam_names) else f"USB / Camera {i}"
+                cams.append((i, f"📷 กล้อง {i}: {name}"))
 
     if not cams:
         cams.append((0, "📷 กล้อง 0: กล้องเริ่มต้น (Default)"))

@@ -340,18 +340,19 @@ class HelmetAppGUI:
         lbl_model = tk.Label(container, text="โมเดลที่ใช้ประมวลผล (Model):", font=("Segoe UI", 10, "bold"), fg="#FFFFFF", bg=self.card_bg)
         lbl_model.pack(anchor="w", padx=20, pady=(10, 5))
 
-        self.model_choice = tk.StringVar(value="best_ncnn_model")
+        default_model = "helmet_detector_ncnn" if os.path.exists(os.path.join(BASE_DIR, "helmet_detector_ncnn")) else "best_ncnn_model"
+        self.model_choice = tk.StringVar(value=default_model)
         model_row = tk.Frame(container, bg=self.card_bg)
         model_row.pack(fill="x", padx=20, pady=(0, 12))
 
         m1 = tk.Radiobutton(
-            model_row, text="best_ncnn_model (NCNN เร็วสุดบน CPU)", variable=self.model_choice, value="best_ncnn_model",
+            model_row, text="helmet_detector_ncnn (NCNN เร็วสุดบน CPU)", variable=self.model_choice, value="helmet_detector_ncnn",
             bg=self.card_bg, fg="#00E676", selectcolor="#2B3240", font=("Segoe UI", 9, "bold")
         )
         m1.pack(anchor="w")
 
         m2 = tk.Radiobutton(
-            model_row, text="best.pt (PyTorch ดั้งเดิม)", variable=self.model_choice, value="best.pt",
+            model_row, text="helmet_detector.pt (PyTorch ดั้งเดิม)", variable=self.model_choice, value="helmet_detector.pt",
             bg=self.card_bg, fg="#82B1FF", selectcolor="#2B3240", font=("Segoe UI", 9)
         )
         m2.pack(anchor="w", pady=(2, 0))
@@ -432,8 +433,15 @@ class HelmetAppGUI:
 
         model_path = os.path.join(BASE_DIR, model_name)
         if not os.path.exists(model_path):
-            messagebox.showerror("ไม่พบโมเดล", f"ไม่พบไฟล์หรือโฟลเดอร์โมเดลที่:\n{model_path}")
-            return
+            fallback_map = {
+                "helmet_detector_ncnn": "best_ncnn_model",
+                "helmet_detector.pt": "best.pt"
+            }
+            if model_name in fallback_map and os.path.exists(os.path.join(BASE_DIR, fallback_map[model_name])):
+                model_path = os.path.join(BASE_DIR, fallback_map[model_name])
+            else:
+                messagebox.showerror("ไม่พบโมเดล", f"ไม่พบไฟล์หรือโฟลเดอร์โมเดลที่:\n{model_path}")
+                return
 
         cmd = [
             sys.executable,
@@ -650,11 +658,13 @@ class HelmetAppGUI:
             messagebox.showwarning("แจ้งเตือน", "ไม่พบไฟล์ confusion_matrix.png")
 
     def _open_model_dir(self):
-        p = os.path.join(BASE_DIR, "best_ncnn_model")
+        p = os.path.join(BASE_DIR, "helmet_detector_ncnn")
+        if not os.path.exists(p):
+            p = os.path.join(BASE_DIR, "best_ncnn_model")
         if os.path.exists(p):
             os.startfile(p)
         else:
-            messagebox.showwarning("แจ้งเตือน", "ไม่พบโฟลเดอร์ best_ncnn_model")
+            messagebox.showwarning("แจ้งเตือน", "ไม่พบโฟลเดอร์ helmet_detector_ncnn")
 
     def _run_subprocess(self, cmd):
         try:

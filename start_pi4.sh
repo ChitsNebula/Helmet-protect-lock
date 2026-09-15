@@ -1,13 +1,12 @@
 #!/bin/bash
 # ==============================================================================
-# 🚀 Launcher Script for Raspberry Pi 4 (Max FPS Mode)
+# 🪖 Launcher Script for Raspberry Pi 4 (Pure NCNN High-FPS Mode)
 # ==============================================================================
 cd "$(dirname "$0")"
 
-# แนะนำ imgsz 320 เพื่อให้ได้ความเร็วสูงสุด ~25-35+ FPS บน Pi 4
-# หากต้องการความคมชัดขึ้น ปรับเป็น --imgsz 416 ได้
+# รันด้วยโมเดล NCNN imgsz 320 เพื่อความลื่นไหลระดับ 25-35+ FPS บน Pi 4
 python3 run_pi4.py \
-    --model helmet_detector_ncnn_model \
+    --model best_ncnn_model \
     --source 0 \
     --imgsz 320 \
     --conf 0.45 \

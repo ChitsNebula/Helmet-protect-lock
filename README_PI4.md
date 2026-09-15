@@ -1,68 +1,35 @@
-# 🪖 คู่มือการติดตั้งและรันระบบ Helmet Protect Lock บน Raspberry Pi 4 (High Speed Mode)
+# 🪖 Helmet Protect Lock - สำหรับ Raspberry Pi 4 (Pure NCNN Mode)
 
-ระบบนี้ถูกออกแบบและปรับแต่งมาเป็นพิเศษเพื่อให้สามารถรันโมเดล **YOLOv8 NCNN** บนหน่วยประมวลผล **Broadcom BCM2711 (Quad-Core Cortex-A72)** ของ Raspberry Pi 4 ได้อย่างลื่นไหลแตะระดับ **25 - 35+ FPS**
-
----
-
-## ⚡ 1. เทคนิคความเร็วสูงที่ใส่ไว้ในระบบ:
-1. **โมเดล NCNN (ARM NEON Acceleration):** ใช้คำสั่งประมวลผลระดับ Vector บน CPU ARM โดยตรง เร็วกว่ารัน PyTorch ปกติ 4 - 6 เท่า
-2. **ระบบกล้องแบบแยก Thread (`AsyncVideoCapture`):** ดึงภาพจากกล้องใน Background Thread ทำให้ไม่มีจังหวะกระตุกหรือดีเลย์สะสม
-3. **ปรับขนาดภาพ Input เป็น `imgsz=320`:** ย่อขนาดการคำนวณของ AI ให้เบาลง แต่ยังคงจับหมวกกันน็อกได้แม่นยำสูง
-4. **โหมด Headless (`--headless`):** รันแบบไม่เปิดหน้าต่าง GUI ประหยัด RAM และ CPU สูงสุด เหมาะสำหรับต่อใช้งานจริงบนรถจักรยานยนต์
+คู่มือการรันระบบตรวจจับหมวกกันน็อกความเร็วสูง (25-35+ FPS) บน Raspberry Pi 4
 
 ---
 
-## 🔌 2. แผนภาพการต่อสายวงจร Relay ล็อกหมวกกันน็อก (GPIO Wiring)
-
-| ขา Relay Module | ขาบน Raspberry Pi 4 | หน้าที่ |
-| :--- | :--- | :--- |
-| **VCC** | **Pin 2 หรือ Pin 4 (5V Power)** | จ่ายไฟเลี้ยงโมดูลรีเลย์ |
-| **GND** | **Pin 6 หรือ Pin 9 (Ground)** | ต่อลงกราวด์ร่วม |
-| **IN (Signal)** | **Pin 11 (GPIO 17 / BCM 17)** | สัญญาณสั่งปลดล็อก/ล็อก |
-
-* **กลอนโซลินอยด์ / มอเตอร์ล็อก:** ต่อเข้ากับช่อง **COM** และ **NO** (Normally Open) ของรีเลย์ และต่อไฟ 12V ภายนอกเข้ากลอน
+### ⚡ ทำไมต้อง Pure NCNN?
+1. **ไม่ต้องลง PyTorch หรือ Ultralytics** (ไม่ต้องโหลดเป็น GB ไม่ต้องเสียเวลาบิวด์หลายชั่วโมง)
+2. **ใช้ไลบรารีเพียง 5 MB (`ncnn`)** ร่วมกับ OpenCV และ NumPy ที่ติดตั้งผ่าน `apt` เรียบร้อยแล้ว
+3. **ใช้ C++ Engine และ ARM NEON Vector Acceleration** รันบน CPU Cortex-A72 ทั้ง 4 Cores เต็มพิกัด
 
 ---
 
-## 🚀 3. ขั้นตอนการติดตั้งบน Raspberry Pi 4 (ครั้งแรก)
+### 🚀 ขั้นตอนการติดตั้งและรันบน Raspberry Pi 4
 
-เปิด Terminal บนบอร์ด Raspberry Pi แล้วรันคำสั่ง:
+1. **เปิด Terminal แล้วรันคำสั่งติดตั้ง ncnn (เสร็จใน 3 วินาที):**
+   ```bash
+   pip3 install ncnn --no-deps
+   ```
 
-```bash
-# 1. เข้าสู่โฟลเดอร์โปรเจกต์
-cd "Helmet-protect-lock"
-
-# 2. รันสคริปต์ติดตั้งอัตโนมัติ (ติดตั้ง OpenCV, Ultralytics และไลบรารีระบบ)
-chmod +x setup_pi4.sh start_pi4.sh
-./setup_pi4.sh
-```
-
----
-
-## ▶️ 4. คำสั่งสั่งรันระบบ (วิธีใช้งาน)
-
-### โหมดที่ 1: รันแบบเร็วสุดๆ มีหน้าต่างแสดงผล (แนะนำสำหรับทดสอบ)
-```bash
-./start_pi4.sh
-```
-*(หรือพิมพ์ `python3 run_pi4.py --imgsz 320 --conf 0.45`)*
-
-### โหมดที่ 2: รันแบบติดตั้งจริงบนรถ (Headless Mode ไม่ต่อจอ กินไฟน้อยสุด)
-```bash
-python3 run_pi4.py --headless --imgsz 320 --conf 0.45
-```
+2. **สั่งรันระบบได้ทันที:**
+   ```bash
+   ./start_pi4.sh
+   ```
+   หรือรันแบบระบุพารามิเตอร์:
+   ```bash
+   python3 run_pi4.py --model best_ncnn_model --imgsz 320
+   ```
 
 ---
 
-## 🛠️ ตัวเลือกปรับแต่งเพิ่มเติม (Command Line Options):
-
-```bash
-python3 run_pi4.py \
-    --model helmet_detector_ncnn_model \
-    --source 0 \           # หมายเลขกล้อง (0 = USB Webcam หรือกล้อง Pi Cam)
-    --imgsz 320 \          # ขนาดภาพ (320 = ไวสุด ~30 FPS, 416 = ปานกลาง, 640 = คมสุด)
-    --conf 0.45 \          # เกณฑ์ความมั่นใจขั้นต่ำ
-    --relay-pin 17 \       # ขา GPIO สั่งงาน Relay (BCM 17)
-    --unlock-sec 5.0 \     # ปลดล็อกค้างไว้กี่วินาที (ก่อนล็อกอัตโนมัติ)
-    --require-frames 3     # ต้องเห็นหมวกกันน็อกกี่เฟรมติดกันถึงจะสั่งปลดล็อก
-```
+### 🔌 การต่อวงจร Relay ปลดล็อกหมวก
+- **VCC** -> 5V (Pin 2 หรือ 4)
+- **GND** -> GND (Pin 6 หรือ 9)
+- **IN** -> GPIO 17 (Pin 11) (หรือระบุด้วย `--relay-pin <number>`)

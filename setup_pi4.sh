@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# 🪖 Helmet Protect Lock - Raspberry Pi 4 Fast Setup Script
+# 🪖 Helmet Protect Lock - Raspberry Pi 4 Fast Setup Script (Pure NCNN)
 # ==============================================================================
 echo "======================================================================"
 echo "    🪖 HELMET PROTECT LOCK - RASPBERRY PI 4 SETUP INSTALLER"
@@ -9,7 +9,7 @@ echo ""
 
 set -e
 
-echo "[1/4] กำลังอัปเดตระบบและติดตั้ง System Packages..."
+echo "[1/3] ตรวจสอบและติดตั้ง System Packages ที่จำเป็น..."
 sudo apt-get update
 sudo apt-get install -y \
     python3-pip \
@@ -20,18 +20,15 @@ sudo apt-get install -y \
     libatlas-base-dev \
     libopenblas-dev
 
-echo "[2/4] กำลังติดตั้ง Ultralytics และไลบรารี Python สำหรับ AI..."
-pip3 install --upgrade pip
-pip3 install ultralytics
+echo "[2/3] ติดตั้ง Pure NCNN Engine (ขนาด 5 MB เสร็จในไม่กี่วินาที ไม่ต้องลง PyTorch)..."
+pip3 install ncnn --no-deps
 
-echo "[3/4] ตรวจสอบสิทธิ์การเข้าถึงกล้องและ GPIO..."
+echo "[3/3] ตั้งค่าสิทธิ์กล้อง, GPIO และสิทธิ์การรันสคริปต์..."
 sudo usermod -a -G video,gpio $USER || true
-
-echo "[4/4] ปรับสิทธิ์การรันไฟล์สคริปต์..."
-chmod +x run_pi4.py start_pi4.sh || true
+chmod +x run_pi4.py start_pi4.sh setup_pi4.sh || true
 
 echo ""
 echo "======================================================================"
-echo "🎉 ติดตั้งระบบทั้งหมดบน Raspberry Pi 4 เสร็จสมบูรณ์แล้ว!"
-echo "👉 สั่งรันตรวจจับความเร็วสูงได้ทันทีด้วยคำสั่ง: ./start_pi4.sh"
+echo "🎉 การติดตั้งเสร็จสมบูรณ์ พร้อมรันบน Raspberry Pi 4 แบบเร็วแรงสุดขีด!"
+echo "👉 เริ่มต้นรันระบบตรวจจับความเร็วสูงได้ทันทีด้วย: ./start_pi4.sh"
 echo "======================================================================"

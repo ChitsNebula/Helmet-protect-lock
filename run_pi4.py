@@ -2,14 +2,14 @@
 # -*- coding: utf-8 -*-
 """
 ==============================================================================
-🪖 HELMET PROTECT LOCK - HIGH PERFORMANCE INFERENCE FOR RASPBERRY PI 4
+🪖 HELMET PROTECT LOCK - PURE NCNN HIGH SPEED RUNNER FOR RASPBERRY PI 4
 ==============================================================================
-สคริปต์ตรวจจับหมวกกันน็อกความเร็วสูงพิเศษ ปรับจูนสำหรับ Raspberry Pi 4 (Quad-Core ARM Cortex-A72)
-- ประมวลผลด้วยโมเดล YOLOv8 NCNN (ARM NEON Acceleration)
+สคริปต์ตรวจจับหมวกกันน็อกความเร็วสูงพิเศษ ปรับแต่งสำหรับ Raspberry Pi 4
+- รันด้วย Pure NCNN C++ Binding (ไม่ต้องลง PyTorch หรือ Ultralytics ให้หนักเครื่อง!)
+- ต้องการแค่: ncnn (5 MB), opencv และ numpy
 - ระบบอ่านเฟรมกล้องแบบแยก Thread (Async Camera Capture) ไร้ดีเลย์
-- ย่อขนาดภาพประมวลผล (imgsz 320 / 416) เพื่อรีด FPS สูงสุด 25 - 35+ FPS
+- ย่อขนาดภาพประมวลผล (imgsz 320 / 416 / 640) เพื่อรีด FPS สูงสุด 25 - 35+ FPS
 - ระบบควบคุม Relay ปลดล็อกหมวกกันน็อกอัตโนมัติผ่าน GPIO เมื่อสวมหมวกถูกต้อง
-- รองรับโหมด Headless (ไม่ต่อจอ) สำหรับติดตั้งบนรถจักรยานยนต์
 ==============================================================================
 """
 
@@ -21,17 +21,29 @@ import threading
 import cv2
 import numpy as np
 
-# ปรับประสิทธิภาพสำหรับ Multi-core ARM Cortex-A72
+# ปรับประสิทธิภาพสำหรับ Multi-core ARM Cortex-A72 บน Pi 4
 os.environ["OPENCV_LOG_LEVEL"] = "OFF"
 os.environ["OMP_NUM_THREADS"] = "4"
 os.environ["OPENBLAS_NUM_THREADS"] = "4"
 
-# นำเข้า Ultralytics YOLO
+# 1. ตรวจสอบไลบรารี NCNN (พยายามใช้ Pure NCNN ก่อน เพื่อความเบาและเร็วสูงสุด)
+USE_PURE_NCNN = False
+USE_ULTRALYTICS = False
+
 try:
-    from ultralytics import YOLO
+    import ncnn
+    USE_PURE_NCNN = True
 except ImportError:
-    print("[ERROR] กรุณาติดตั้ง Ultralytics ก่อน: pip3 install ultralytics")
-    sys.exit(1)
+    try:
+        from ultralytics import YOLO
+        USE_ULTRALYTICS = True
+    except ImportError:
+        print("\n" + "=" * 60)
+        print("❌ [ERROR] ยังไม่ได้ติดตั้งไลบรารี ncnn")
+        print("👉 วิธีแก้: พิมพ์คำสั่งนี้ใน Terminal (ขนาดแค่ 5 MB เสร็จใน 3 วินาที!):")
+        print("   pip3 install ncnn --no-deps")
+        print("=" * 60 + "\n")
+        sys.exit(1)
 
 # นำเข้าไลบรารี GPIO (มี Mock Fallback หากไม่ได้รันบนบอร์ดจริง)
 HAS_GPIO = False
@@ -39,22 +51,105 @@ try:
     import RPi.GPIO as GPIO
     HAS_GPIO = True
 except (ImportError, RuntimeError):
-    try:
-        from gpiozero import OutputDevice
-        HAS_GPIO = "gpiozero"
-    except ImportError:
-        HAS_GPIO = False
+    HAS_GPIO = False
 
 
 # ==============================================================================
-# 1. คลาสอ่านกล้องแบบ Asynchronous Multi-threading (ความเร็วสูงสุด ไร้ค้าง)
+# คลาสตรวจจับด้วย Pure NCNN Engine (เบา เร็ว ไม่ต้องพึ่ง PyTorch)
+# ==============================================================================
+class PureNCNNDetector:
+    def __init__(self, model_dir, imgsz=320, num_threads=4):
+        self.imgsz = imgsz
+        self.names = {0: 'with-helmet', 1: 'without-helmet'}
+
+        param_path = os.path.join(model_dir, "model.ncnn.param")
+        bin_path = os.path.join(model_dir, "model.ncnn.bin")
+
+        if not os.path.exists(param_path) or not os.path.exists(bin_path):
+            raise FileNotFoundError(f"ไม่พบไฟล์ model.ncnn.param หรือ model.ncnn.bin ใน {model_dir}")
+
+        self.net = ncnn.Net()
+        self.net.opt.use_vulkan_compute = False
+        self.net.opt.num_threads = num_threads
+        self.net.load_param(param_path)
+        self.net.load_model(bin_path)
+
+        # ค่า Normalization สำหรับ YOLOv8 (RGB 0.0 - 1.0)
+        self.mean_vals = [0.0, 0.0, 0.0]
+        self.norm_vals = [1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0]
+
+    def detect(self, frame, conf_thresh=0.45, iou_thresh=0.45):
+        h_orig, w_orig = frame.shape[:2]
+
+        # แปลง BGR เป็น RGB และย่อขนาดตาม imgsz
+        in_mat = ncnn.Mat.from_pixels_resize(
+            frame,
+            ncnn.Mat.PixelType.PIXEL_BGR2RGB,
+            w_orig,
+            h_orig,
+            self.imgsz,
+            self.imgsz
+        )
+        in_mat.substract_mean_normalize(self.mean_vals, self.norm_vals)
+
+        ex = self.net.create_extractor()
+        ex.input("in0", in_mat)
+        ret, out0 = ex.extract("out0")
+        if ret != 0:
+            return []
+
+        out_arr = np.array(out0) # shape (6, num_anchors)
+        preds = out_arr.T
+
+        boxes = []
+        confs = []
+        class_ids = []
+
+        scale_x = w_orig / self.imgsz
+        scale_y = h_orig / self.imgsz
+
+        for p in preds:
+            cx, cy, w, h = p[:4]
+            scores = p[4:]
+            cls_id = int(np.argmax(scores))
+            conf = float(scores[cls_id])
+
+            if conf >= conf_thresh:
+                x1 = int((cx - w / 2.0) * scale_x)
+                y1 = int((cy - h / 2.0) * scale_y)
+                bw = int(w * scale_x)
+                bh = int(h * scale_y)
+                boxes.append([x1, y1, bw, bh])
+                confs.append(conf)
+                class_ids.append(cls_id)
+
+        if not boxes:
+            return []
+
+        indices = cv2.dnn.NMSBoxes(boxes, confs, conf_thresh, iou_thresh)
+        results = []
+        for idx in indices:
+            i = idx[0] if isinstance(idx, (list, tuple, np.ndarray)) else idx
+            x, y, w, h = boxes[i]
+            x2 = x + w
+            y2 = y + h
+            cls_id = class_ids[i]
+            results.append((
+                (max(0, x), max(0, y), min(w_orig, x2), min(h_orig, y2)),
+                self.names.get(cls_id, f"Class {cls_id}"),
+                confs[i],
+                cls_id
+            ))
+        return results
+
+
+# ==============================================================================
+# คลาสอ่านกล้องแบบ Asynchronous Multi-threading (ความเร็วสูงสุด ไร้ค้าง)
 # ==============================================================================
 class AsyncVideoCapture:
-    """อ่านภาพจากกล้องใน Thread แยก เพื่อไม่ให้การอ่านภาพเป็นคอขวดของการประมวลผล AI"""
     def __init__(self, src=0, width=640, height=480):
         if str(src).isdigit():
             src = int(src)
-            # บน Linux/Pi4 ให้ใช้ V4L2 backend ซึ่งเร็วและเสถียรที่สุด
             if sys.platform.startswith("linux"):
                 self.cap = cv2.VideoCapture(src, cv2.CAP_V4L2)
             elif sys.platform == "win32":
@@ -67,7 +162,6 @@ class AsyncVideoCapture:
         if not self.cap.isOpened():
             raise RuntimeError(f"ไม่สามารถเปิดกล้องได้ที่ source: {src}")
 
-        # ตั้งขนาดภาพของกล้อง
         if isinstance(src, int):
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
@@ -104,10 +198,9 @@ class AsyncVideoCapture:
 
 
 # ==============================================================================
-# 2. ระบบควบคุมรีเลย์ล็อกหมวกกันน็อก (GPIO Relay Controller)
+# ระบบควบคุมรีเลย์ล็อกหมวกกันน็อก (GPIO Relay Controller)
 # ==============================================================================
 class HelmetLockController:
-    """ควบคุม Relay สั่งปลดล็อก/ล็อก กลอนโซลินอยด์ของหมวกกันน็อก"""
     def __init__(self, pin=17, active_low=True, unlock_duration=5.0):
         self.pin = pin
         self.active_low = active_low
@@ -120,7 +213,6 @@ class HelmetLockController:
             GPIO.setmode(GPIO.BCM)
             GPIO.setwarnings(False)
             GPIO.setup(self.pin, GPIO.OUT)
-            # สถานะเริ่มต้น: ล็อก (Relay OFF)
             initial_state = GPIO.HIGH if self.active_low else GPIO.LOW
             GPIO.output(self.pin, initial_state)
             print(f"[GPIO] ตั้งค่า RPi.GPIO Pin {self.pin} (Relay Locked) สำเร็จ")
@@ -128,10 +220,9 @@ class HelmetLockController:
             print(f"[GPIO MOCK] จำลองการทำงาน Relay Pin {self.pin} (ไม่ได้ต่อฮาร์ดแวร์จริง)")
 
     def unlock(self):
-        """สั่งปลดล็อกเป็นเวลาที่กำหนด"""
         with self.lock:
             if self.is_unlocked:
-                return  # กำลังปลดล็อกอยู่แล้ว
+                return
             self.is_unlocked = True
             print("\n" + "=" * 55)
             print("🔓 >>> [ACTION] ตรวจพบหมวกกันน็อก! สั่งปลดล็อก Relay แล้ว <<<")
@@ -149,7 +240,6 @@ class HelmetLockController:
             self.unlock_timer.start()
 
     def _auto_lock(self):
-        """ล็อกอัตโนมัติเมื่อครบเวลา"""
         with self.lock:
             self.is_unlocked = False
             print("\n🔒 >>> [ACTION] ครบเวลาแล้ว สั่งล็อก Relay กลับสู่โหมดปลอดภัย <<<")
@@ -165,10 +255,10 @@ class HelmetLockController:
 
 
 # ==============================================================================
-# 3. ฟังก์ชันหลักสำหรับรัน Real-time Detection
+# ฟังก์ชันหลักสำหรับรัน Real-time Detection
 # ==============================================================================
 def main():
-    parser = argparse.ArgumentParser(description="High-Speed YOLOv8 NCNN Helmet Detection for Raspberry Pi 4")
+    parser = argparse.ArgumentParser(description="High-Speed Pure NCNN Helmet Detection for Raspberry Pi 4")
     parser.add_argument("--model", type=str, default="helmet_detector_ncnn_model", help="โฟลเดอร์โมเดล NCNN")
     parser.add_argument("--source", type=str, default="0", help="Camera Index (0) หรือ RTSP/HTTP URL")
     parser.add_argument("--imgsz", type=int, default=320, help="ขนาดภาพเข้า AI (320 = เร็วสุด ~30 FPS, 416 = ปานกลาง, 640 = คมสุด)")
@@ -176,23 +266,27 @@ def main():
     parser.add_argument("--cam-w", type=int, default=640, help="ความกว้างภาพจากกล้อง (Default: 640)")
     parser.add_argument("--cam-h", type=int, default=480, help="ความสูงภาพจากกล้อง (Default: 480)")
     parser.add_argument("--relay-pin", type=int, default=17, help="หมายเลข GPIO Pin สำหรับคุม Relay (BCM 17)")
-    parser.add_argument("--active-low", action="store_true", default=True, help="Relay ทำงานแบบ Active LOW (ค่าปกติของโมดูลรีเลย์)")
+    parser.add_argument("--active-low", action="store_true", default=True, help="Relay ทำงานแบบ Active LOW")
     parser.add_argument("--unlock-sec", type=float, default=5.0, help="ระยะเวลาปลดล็อก (วินาที)")
     parser.add_argument("--require-frames", type=int, default=3, help="จำนวนเฟรมที่ต้องเห็นหมวกต่อเนื่องก่อนสั่งปลดล็อก")
-    parser.add_argument("--headless", action="store_true", help="รันแบบไม่มีหน้าต่างแสดงผล (สำหรับติดตั้งในตัวรถ กินแรมน้อยสุด)")
+    parser.add_argument("--headless", action="store_true", help="รันแบบไม่มีหน้าต่างแสดงผล (ประหยัดแรมและ CPU สูงสุด)")
     args = parser.parse_args()
 
-    # ตรวจสอบพาธโมเดล (รองรับทั้งชื่อ helmet_detector_ncnn_model และ best_ncnn_model)
+    # ตรวจสอบพาธโมเดล
     model_path = args.model
     if not os.path.exists(model_path):
-        if os.path.exists("best_ncnn_model"):
-            model_path = "best_ncnn_model"
+        for alt in ["best_ncnn_model", "helmet_detector_ncnn", "helmet_trained_bundle/helmet_detector_ncnn"]:
+            if os.path.exists(alt):
+                model_path = alt
+                break
         else:
             print(f"[ERROR] ไม่พบโฟลเดอร์โมเดล NCNN: {args.model}")
             return
 
+    engine_name = "Pure NCNN C++" if USE_PURE_NCNN else "Ultralytics NCNN"
+
     print("=" * 65)
-    print("🚀 HELMET PROTECT LOCK - RASPBERRY PI 4 HIGH SPEED RUNNER")
+    print(f"🚀 HELMET PROTECT LOCK - PI 4 FAST RUNNER ({engine_name})")
     print("=" * 65)
     print(f"📦 โมเดล NCNN     : {model_path}")
     print(f"⚡ ขนาดภาพ AI (imgsz): {args.imgsz}x{args.imgsz} (Speed Optimized)")
@@ -201,11 +295,14 @@ def main():
     print(f"🖥️ แสดงหน้าต่างผลลัพธ์: {'ปิด (Headless Mode)' if args.headless else 'เปิด (GUI Display)'}")
     print("=" * 65)
 
-    # 1. โหลดโมเดล NCNN
-    print("[1/3] กำลังโหลดโมเดล NCNN เข้าสู่หน่วยความจำ...")
+    # 1. โหลดโมเดล
+    print(f"[1/3] กำลังโหลดโมเดลด้วย {engine_name}...")
     t_start = time.time()
-    model = YOLO(model_path, task="detect")
-    print(f"[OK] โหลดโมเดลสำเร็จใน {time.time() - t_start:.2f} วินาที! คลาส: {model.names}")
+    if USE_PURE_NCNN:
+        detector = PureNCNNDetector(model_path, imgsz=args.imgsz, num_threads=4)
+    else:
+        detector = YOLO(model_path, task="detect")
+    print(f"[OK] โหลดโมเดลสำเร็จใน {time.time() - t_start:.2f} วินาที!")
 
     # 2. เริ่มต้นระบบควบคุมล็อก
     lock_ctl = HelmetLockController(
@@ -232,7 +329,7 @@ def main():
     fps_smooth = 0.0
     prev_time = time.time()
 
-    win_name = "Helmet AI - Pi 4 Fast Runner"
+    win_name = "Helmet AI - Pi 4 Pure NCNN Runner"
     if not args.headless:
         cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
 
@@ -243,7 +340,6 @@ def main():
                 time.sleep(0.005)
                 continue
 
-            # จับเวลาสำหรับคำนวณ FPS
             curr_time = time.time()
             dt = curr_time - prev_time
             prev_time = curr_time
@@ -251,34 +347,34 @@ def main():
                 current_fps = 1.0 / dt
                 fps_smooth = (fps_smooth * 0.8) + (current_fps * 0.2)
 
-            # รันโมเดล NCNN ด้วย imgsz ที่ปรับให้ไวสุดๆ บน Pi4
-            results = model.predict(
-                frame,
-                imgsz=args.imgsz,
-                conf=args.conf,
-                verbose=False,
-                device="cpu"
-            )
-
             has_helmet = False
             has_no_helmet = False
             boxes_to_draw = []
 
-            if len(results) > 0 and results[0].boxes is not None:
-                for b in results[0].boxes:
-                    cls_id = int(b.cls[0].item())
-                    conf_score = float(b.conf[0].item())
-                    box_xyxy = b.xyxy[0].cpu().numpy().astype(int)
-
-                    class_name = model.names.get(cls_id, f"Class {cls_id}")
+            # รันการตรวจจับ
+            if USE_PURE_NCNN:
+                detections = detector.detect(frame, conf_thresh=args.conf)
+                for (x1, y1, x2, y2), class_name, conf_score, cls_id in detections:
                     if "with-helmet" in class_name.lower() or cls_id == 0:
                         has_helmet = True
                     else:
                         has_no_helmet = True
+                    boxes_to_draw.append(((x1, y1, x2, y2), class_name, conf_score, cls_id))
+            else:
+                results = detector.predict(frame, imgsz=args.imgsz, conf=args.conf, verbose=False, device="cpu")
+                if len(results) > 0 and results[0].boxes is not None:
+                    for b in results[0].boxes:
+                        cls_id = int(b.cls[0].item())
+                        conf_score = float(b.conf[0].item())
+                        box_xyxy = b.xyxy[0].cpu().numpy().astype(int)
+                        class_name = detector.names.get(cls_id, f"Class {cls_id}")
+                        if "with-helmet" in class_name.lower() or cls_id == 0:
+                            has_helmet = True
+                        else:
+                            has_no_helmet = True
+                        boxes_to_draw.append((box_xyxy, class_name, conf_score, cls_id))
 
-                    boxes_to_draw.append((box_xyxy, class_name, conf_score, cls_id))
-
-            # ตรวจสอบเงื่อนไขการสั่งปลดล็อก
+            # เงื่อนไขการสั่งปลดล็อก
             if has_helmet and not has_no_helmet:
                 consecutive_helmet_count += 1
                 if consecutive_helmet_count >= args.require_frames:
@@ -286,11 +382,10 @@ def main():
             else:
                 consecutive_helmet_count = max(0, consecutive_helmet_count - 1)
 
-            # หากเปิดโหมดแสดงผลหน้าจอ
+            # หน้าจอแสดงผล
             if not args.headless:
                 display_frame = frame.copy()
 
-                # วาดกรอบสี่เหลี่ยม
                 for (x1, y1, x2, y2), cname, conf_score, cls_id in boxes_to_draw:
                     color = (0, 230, 0) if cls_id == 0 else (0, 50, 255)
                     cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 2)
@@ -298,15 +393,12 @@ def main():
                     cv2.putText(display_frame, label_text, (x1, max(20, y1 - 8)),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2, cv2.LINE_AA)
 
-                # แถบแสดงสถานะด้านบน
                 h, w, _ = display_frame.shape
                 cv2.rectangle(display_frame, (0, 0), (w, 38), (20, 20, 20), -1)
 
-                # FPS
                 cv2.putText(display_frame, f"FPS: {fps_smooth:.1f} (Pi4 NCNN)", (10, 25),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2, cv2.LINE_AA)
 
-                # Lock Status
                 if lock_ctl.is_unlocked:
                     status_str = "STATUS: UNLOCKED [OPEN]"
                     status_col = (0, 255, 0)
@@ -322,7 +414,6 @@ def main():
                 if key == ord('q') or key == 27:
                     break
             else:
-                # โหมด Headless: พิมพ์ FPS สรุปทุกๆ 5 วินาที
                 if int(curr_time) % 5 == 0:
                     status = "UNLOCKED" if lock_ctl.is_unlocked else "LOCKED"
                     print(f"\r[Pi4] FPS: {fps_smooth:.1f} | Helmet: {'YES' if has_helmet else 'NO '} | Lock: {status} ", end="")
@@ -330,7 +421,7 @@ def main():
     except KeyboardInterrupt:
         print("\n[INFO] ผู้ใช้สั่งหยุดการทำงาน (Ctrl+C)")
     finally:
-        print("[INFO] กำลังปิดระบบและคืนค่าทรัพยากร...")
+        print("[INFO] กำลังปิดระบบ...")
         cam.stop()
         lock_ctl.cleanup()
         if not args.headless:

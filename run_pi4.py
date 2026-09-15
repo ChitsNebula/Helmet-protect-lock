@@ -16,6 +16,15 @@
 import argparse
 import os
 import sys
+import io
+
+# ป้องกัน UnicodeEncodeError บน Windows Console
+if sys.platform == "win32":
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 import time
 import threading
 import cv2

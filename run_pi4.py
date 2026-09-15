@@ -67,9 +67,23 @@ except (ImportError, RuntimeError):
 # คลาสตรวจจับด้วย Pure NCNN Engine (เบา เร็ว ไม่ต้องพึ่ง PyTorch)
 # ==============================================================================
 class PureNCNNDetector:
-    def __init__(self, model_dir, imgsz=320, num_threads=4):
+    def __init__(self, model_dir, imgsz=640, num_threads=4):
+        # ตรวจสอบขนาด imgsz จาก metadata.yaml อัตโนมัติเพื่อความแม่นยำ 100%
+        meta_path = os.path.join(model_dir, "metadata.yaml")
+        if os.path.exists(meta_path):
+            try:
+                import yaml
+                with open(meta_path, "r", encoding="utf-8") as yf:
+                    meta = yaml.safe_load(yf)
+                    if "imgsz" in meta and isinstance(meta["imgsz"], list):
+                        imgsz = meta["imgsz"][0]
+                    if "names" in meta and isinstance(meta["names"], dict):
+                        self.names = meta["names"]
+            except Exception:
+                pass
         self.imgsz = imgsz
-        self.names = {0: 'with-helmet', 1: 'without-helmet'}
+        if not hasattr(self, 'names'):
+            self.names = {0: 'with-helmet', 1: 'without-helmet'}
 
         param_path = os.path.join(model_dir, "model.ncnn.param")
         bin_path = os.path.join(model_dir, "model.ncnn.bin")
@@ -270,7 +284,7 @@ def main():
     parser = argparse.ArgumentParser(description="High-Speed Pure NCNN Helmet Detection for Raspberry Pi 4")
     parser.add_argument("--model", type=str, default="helmet_detector_ncnn_model", help="โฟลเดอร์โมเดล NCNN")
     parser.add_argument("--source", type=str, default="0", help="Camera Index (0) หรือ RTSP/HTTP URL")
-    parser.add_argument("--imgsz", type=int, default=320, help="ขนาดภาพเข้า AI (320 = เร็วสุด ~30 FPS, 416 = ปานกลาง, 640 = คมสุด)")
+    parser.add_argument("--imgsz", type=int, default=640, help="ขนาดภาพเข้า AI (640 = มาตรฐานโมเดล ~30 FPS, 416 = ปานกลาง, 640 = คมสุด)")
     parser.add_argument("--conf", type=float, default=0.45, help="เกณฑ์ความมั่นใจ (Confidence Threshold)")
     parser.add_argument("--cam-w", type=int, default=640, help="ความกว้างภาพจากกล้อง (Default: 640)")
     parser.add_argument("--cam-h", type=int, default=480, help="ความสูงภาพจากกล้อง (Default: 480)")

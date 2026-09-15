@@ -138,9 +138,12 @@ def draw_hud(frame, fps, count_with, count_without):
 
 
 def run_webcam_or_video(model, source, conf_thresh, save_path=None, flip=True):
-    """รัน Real-time Detection ผ่าน Webcam หรือ Video"""
-    is_cam = source.isdigit() or source == "0"
+    """รัน Real-time Detection ผ่าน Webcam, Video หรือ IP Camera Stream"""
+    src_str = str(source)
+    is_cam = src_str.isdigit() or src_str == "0"
+    is_stream = src_str.startswith(("http://", "https://", "rtsp://"))
     src = int(source) if is_cam else source
+
     if is_cam and sys.platform == "win32":
         cap = cv2.VideoCapture(src, cv2.CAP_DSHOW)
         if not cap.isOpened():
@@ -149,7 +152,7 @@ def run_webcam_or_video(model, source, conf_thresh, save_path=None, flip=True):
         cap = cv2.VideoCapture(src)
 
     if not cap.isOpened():
-        print(f"[Error] ไม่สามารถเปิดแหล่งวิดีโอ: {source}")
+        print(f"[Error] ไม่สามารถเปิดแหล่งวิดีโอหรือสตรีม: {source}")
         return
 
     # ตั้งค่าความละเอียดสำหรับ Webcam
@@ -157,7 +160,8 @@ def run_webcam_or_video(model, source, conf_thresh, save_path=None, flip=True):
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
-    window_name = f"Helmet Detection - NCNN Realtime ({'Webcam' if is_cam else 'Video'})"
+    mode_label = "Webcam" if is_cam else ("IP Camera" if is_stream else "Video")
+    window_name = f"Helmet Detection - NCNN Realtime ({mode_label})"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
     writer = None
@@ -272,7 +276,8 @@ def main():
 
     # 2. เลือกว่าจะรันแบบใด
     src = args.source
-    if src.isdigit() or src.endswith((".mp4", ".avi", ".mkv", ".mov")):
+    is_stream = src.startswith(("http://", "https://", "rtsp://"))
+    if src.isdigit() or src.endswith((".mp4", ".avi", ".mkv", ".mov")) or is_stream:
         run_webcam_or_video(model, src, args.conf, args.save, flip=not args.no_flip)
     else:
         out_dir = args.save if args.save else "runs/ncnn_predict"

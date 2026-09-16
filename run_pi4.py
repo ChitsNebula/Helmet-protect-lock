@@ -47,12 +47,10 @@ except ImportError:
         from ultralytics import YOLO
         USE_ULTRALYTICS = True
     except ImportError:
-        print("
-" + "=" * 60)
+        print("\n" + "=" * 60)
         print("❌ [ERROR] ยังไม่ได้ติดตั้งไลบรารี ncnn")
         print("👉 ติดตั้งทันที: pip3 install ncnn --no-deps")
-        print("=" * 60 + "
-")
+        print("=" * 60 + "\n")
         sys.exit(1)
 
 HAS_GPIO = False
@@ -187,7 +185,10 @@ class AsyncVideoCapture:
             if sys.platform.startswith("linux"):
                 self.cap = cv2.VideoCapture(src, cv2.CAP_V4L2)
                 # 🔥 ปลดล็อกกล้องบน Linux Pi ให้วิ่ง 30 FPS (ถ้าไม่ใส่จะโดนล็อกที่ 5 FPS)
-                self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+                try:
+                    self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+                except Exception:
+                    pass
             elif sys.platform == "win32":
                 self.cap = cv2.VideoCapture(src, cv2.CAP_DSHOW)
             else:
